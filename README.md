@@ -1,0 +1,119 @@
+# Mamsa — SuperAdmin Dashboard
+
+Administration console for the Mamsa platform. Third app in the system alongside
+`mamsa-app` (guest website) and `mamsa-dashboard` (partner dashboard), sharing their
+stack and conventions.
+
+## Stack
+
+Next.js 14 (App Router) · TypeScript (strict) · TailwindCSS · shadcn/ui · Zustand ·
+Recharts · Vitest.
+
+## Getting started
+
+```bash
+pnpm install
+pnpm dev          # http://localhost:3002
+```
+
+Sign in at `/login` with any valid Saudi mobile (9 digits starting with `5`) and the
+mock OTP **`111222`**.
+
+## Mock → real backend
+
+The app ships running entirely on `src/lib/mock`. There is exactly one seam between
+the UI and its data source: `src/lib/api/client.ts`.
+
+```env
+# .env.local — development
+NEXT_PUBLIC_USE_MOCK=true
+NEXT_PUBLIC_API_BASE_URL=
+
+# staging / production
+NEXT_PUBLIC_USE_MOCK=false
+NEXT_PUBLIC_API_BASE_URL=https://api.mamsaa.com
+```
+
+Flipping the flag and setting the base URL is the **only** change required. No
+component imports `lib/mock` directly — every screen talks to `lib/api`, and each
+resource module decides internally whether to resolve against the mock or issue a
+real request. Endpoints are root-mounted (no `/api/v1` prefix) and every request
+sends `credentials: 'include'`.
+
+## Locked platform rules
+
+These are business decisions encoded in `src/lib/constants/`. Never hardcode an
+equivalent value inline.
+
+| Rule | Value |
+|---|---|
+| Currency | SAR only — never AED/USD |
+| Phone | `+966` + 9 digits starting with 5 |
+| Authentication | OTP only, 6 digits — **no passwords, no 2FA anywhere** |
+| Platform commission | **2%** (`PLATFORM_COMMISSION_RATE`) |
+| Partner share | **98%** (`PARTNER_SHARE_RATE`) |
+| Dates | Gregorian `DD/MM/YYYY`, Latin digits |
+| Review SLA | 24h warning, 48h breach |
+| Payments | Moyasar, immediate — no pending-payment approval step |
+
+`splitCommission(total)` is the only way to derive a commission figure, and it
+guarantees `commission + partnerShare === total`. Mamsa-owned units bypass the split
+via `splitForUnit(total, mamsaOwned)` — the platform keeps the full amount.
+
+### Canonical status vocabularies
+
+- **Booking**: `pending_payment` · `confirmed` · `completed` · `cancelled`
+  (there is no "approved" and no bare "pending" booking)
+- **Unit**: `draft` · `pending_review` · `approved` · `rejected`
+  (an approved unit is published — there is no separate published state)
+- **Partner**: `pending` · `active` · `suspended` · `rejected`
+- **Refund**: `refunded` · `partial` · `none` · `failed`
+  (`failed` is the only state needing admin action)
+- **Approval request type**: `new` · `resubmission` · `reapproval_after_edit`
+  (there is no priority concept — all requests share one SLA)
+
+## Project structure
+
+```
+src/
+  app/(auth)/login        OTP sign-in
+  app/(admin)/*           every admin screen, wrapped in AppShell
+  components/layout       Sidebar, Header, AppShell, DirectionProvider
+  components/common       KpiCard, StatusBadge, DataTable, ConfirmDialog, PdfViewer …
+  components/ui           shadcn primitives
+  lib/api                 client + one module per resource (the mock/real seam)
+  lib/mock                seed data and mock resource implementations
+  lib/constants           locked business rules and status vocabularies
+  lib/utils               formatters (SAR, dates, phone, commission split)
+  stores                  Zustand: auth, ui, notifications
+  i18n                    ar / en dictionaries
+```
+
+Server data lives in the API layer and React state. Zustand holds session, UI
+preferences and the unread badge only — lists are never mirrored into a store.
+
+## Localisation & direction
+
+Arabic (RTL) and English (LTR) both ship. The layout is built with CSS logical
+properties (`ms-*`, `me-*`, `start`, `end`) so it mirrors automatically;
+`DirectionProvider` syncs `<html lang/dir>` with the active locale. Phone numbers,
+emails, booking codes and OTP inputs always render inside `dir="ltr"` islands.
+
+## Scripts
+
+```bash
+pnpm dev         # dev server on :3002
+pnpm build       # production build
+pnpm lint        # eslint
+pnpm typecheck   # tsc --noEmit
+pnpm test        # vitest
+```
+
+## Build phases
+
+- **Phase 0 (this commit)** — foundation: shell, design system, shared components,
+  API layer, mock data, OTP login.
+- **Phase 1** — Overview, Users, Profile
+- **Phase 2** — Partners, Approvals, Units
+- **Phase 3** — Bookings, Cancellations, Reports, Notifications
+- **Phase 4** — backend integration

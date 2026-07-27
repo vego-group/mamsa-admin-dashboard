@@ -1,0 +1,133 @@
+import {
+  CURRENCY,
+  PARTNER_SHARE_RATE,
+  PHONE_PREFIX,
+  PLATFORM_COMMISSION_RATE,
+  REVIEW_SLA_HOURS,
+} from '@/lib/constants';
+
+/** Always Latin digits, grouped thousands, SAR suffix. */
+export function formatSAR(amount: number, opts?: { compact?: boolean }): string {
+  if (!Number.isFinite(amount)) return `0 ${CURRENCY}`;
+
+  if (opts?.compact && Math.abs(amount) >= 1000) {
+    const units: Array<[number, string]> = [
+      [1_000_000_000, 'B'],
+      [1_000_000, 'M'],
+      [1_000, 'K'],
+    ];
+    for (const [size, suffix] of units) {
+      if (Math.abs(amount) >= size) {
+        const value = amount / size;
+        const rounded = Math.abs(value) >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+        return `${rounded}${suffix} ${CURRENCY}`;
+      }
+    }
+  }
+
+  const hasFraction = Math.round(amount * 100) % 100 !== 0;
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
+  return `${formatted} ${CURRENCY}`;
+}
+
+/** Gregorian DD/MM/YYYY with Latin digits, regardless of UI language. */
+export function formatDate(iso: string | Date): string {
+  const date = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+export function formatDateTime(iso: string | Date): string {
+  const date = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const time = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+  return `${formatDate(date)} · ${time}`;
+}
+
+/** +966 55 123 4567 — render inside a dir="ltr" island. */
+export function formatPhone(e164: string): string {
+  const digits = e164.replace(/\D/g, '');
+  const national = digits.startsWith('966') ? digits.slice(3) : digits;
+  if (national.length !== 9) return e164;
+  return `${PHONE_PREFIX} ${national.slice(0, 2)} ${national.slice(2, 5)} ${national.slice(5)}`;
+}
+
+export interface CommissionSplit {
+  total: number;
+  commission: number;
+  partnerShare: number;
+}
+
+/**
+ * Split a booking total into Mamsa's 2% and the partner's 98%.
+ * The two parts are guaranteed to sum back to the total exactly.
+ */
+export function splitCommission(total: number): CommissionSplit {
+  const safeTotal = round2(total);
+  const commission = round2(safeTotal * PLATFORM_COMMISSION_RATE);
+  const partnerShare = round2(safeTotal - commission);
+  return { total: safeTotal, commission, partnerShare };
+}
+
+/** Mamsa-owned units are not split — the platform keeps the full amount. */
+export function splitForUnit(total: number, mamsaOwned: boolean): CommissionSplit {
+  if (mamsaOwned) {
+    const safeTotal = round2(total);
+    return { total: safeTotal, commission: safeTotal, partnerShare: 0 };
+  }
+  return splitCommission(total);
+}
+
+export function formatPercent(value: number, fractionDigits = 1): string {
+  return `${value.toFixed(fractionDigits)}%`;
+}
+
+export function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '؟';
+  if (parts.length === 1) return parts[0].slice(0, 2);
+  return `${parts[0][0]}${parts[1][0]}`;
+}
+
+export interface WaitingTime {
+  hours: number;
+  label: string;
+  severity: 'ok' | 'warn' | 'breach';
+}
+
+/** Hours a review request has been waiting, graded against the 24/48h SLA. */
+export function waitingTime(submittedAt: string | Date, now: Date = new Date()): WaitingTime {
+  const submitted = submittedAt instanceof Date ? submittedAt : new Date(submittedAt);
+  const hours = Math.max(0, Math.floor((now.getTime() - submitted.getTime()) / 3_600_000));
+
+  const severity: WaitingTime['severity'] =
+    hours >= REVIEW_SLA_HOURS.breach ? 'breach' : hours >= REVIEW_SLA_HOURS.warn ? 'warn' : 'ok';
+
+  const label =
+    hours < 1 ? '< 1h' : hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
+
+  return { hours, label, severity };
+}
+
+export function nightsBetween(checkIn: string | Date, checkOut: string | Date): number {
+  const a = checkIn instanceof Date ? checkIn : new Date(checkIn);
+  const b = checkOut instanceof Date ? checkOut : new Date(checkOut);
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86_400_000));
+}
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export const RATES = { PLATFORM_COMMISSION_RATE, PARTNER_SHARE_RATE } as const;
