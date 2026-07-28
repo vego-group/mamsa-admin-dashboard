@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { approvalsApi } from '@/lib/api';
+import { ApiError, approvalsApi } from '@/lib/api';
 import { REVIEW_SLA_HOURS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatSAR, waitingTime } from '@/lib/utils/format';
@@ -55,6 +55,7 @@ export default function ApprovalDetailPage({ params }: { params: { id: string } 
 
   const [detail, setDetail] = useState<ApprovalDetail | null>(null);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const [tab, setTab] = useState<Tab>('property');
   const [done, setDone] = useState<Set<ChecklistStep>>(new Set());
   const [decision, setDecision] = useState<'approve' | 'reject' | null>(null);
@@ -63,11 +64,16 @@ export default function ApprovalDetailPage({ params }: { params: { id: string } 
   useEffect(() => {
     let stale = false;
     setError(false);
+    setErrorMessage(undefined);
     setDetail(null);
     approvalsApi
       .get(params.id)
       .then((result) => !stale && setDetail(result))
-      .catch(() => !stale && setError(true));
+      .catch((err) => {
+        if (stale) return;
+        setError(true);
+        setErrorMessage(err instanceof ApiError ? err.message : undefined);
+      });
     return () => {
       stale = true;
     };
@@ -104,6 +110,7 @@ export default function ApprovalDetailPage({ params }: { params: { id: string } 
       <Card>
         <ErrorState
           title={t.approvalDetail.notFound}
+          description={errorMessage}
           onRetry={() => setReloadToken((token) => token + 1)}
         />
       </Card>
@@ -376,8 +383,17 @@ export default function ApprovalDetailPage({ params }: { params: { id: string } 
         }
         confirmLabel={t.approvalDetail.confirmApproval}
         onConfirm={async () => {
-          await approvalsApi.approve(detail.id);
-          router.push('/approvals');
+          try {
+            await approvalsApi.approve(detail.id);
+            router.push('/approvals');
+          } catch (err) {
+            // The unit moved out of pending_review under us — the queue is the source of truth now.
+            if (err instanceof ApiError && err.code === 'CONFLICT') {
+              router.push('/approvals');
+              return;
+            }
+            throw err;
+          }
         }}
       />
 
@@ -404,8 +420,17 @@ export default function ApprovalDetailPage({ params }: { params: { id: string } 
         notesPlaceholder={t.approvalDetail.rejectionNotes}
         confirmLabel={t.approvalDetail.confirmRejection}
         onConfirm={async ({ reason, notes }) => {
-          await approvalsApi.reject(detail.id, reason ?? '', notes);
-          router.push('/approvals');
+          try {
+            await approvalsApi.reject(detail.id, reason ?? '', notes);
+            router.push('/approvals');
+          } catch (err) {
+            // The unit moved out of pending_review under us — the queue is the source of truth now.
+            if (err instanceof ApiError && err.code === 'CONFLICT') {
+              router.push('/approvals');
+              return;
+            }
+            throw err;
+          }
         }}
       />
     </div>

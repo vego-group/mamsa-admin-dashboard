@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useT } from '@/i18n';
-import { approvalsApi } from '@/lib/api';
+import { approvalsApi, setUnauthorizedHandler } from '@/lib/api';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore, useNotificationsStore, useUiStore } from '@/stores';
 import { Header } from './Header';
@@ -11,9 +12,11 @@ import { Sidebar } from './Sidebar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const t = useT();
+  const router = useRouter();
   const mobileNavOpen = useUiStore((state) => state.mobileNavOpen);
   const setMobileNav = useUiStore((state) => state.setMobileNav);
   const loadAdmin = useAuthStore((state) => state.load);
+  const setAdmin = useAuthStore((state) => state.setAdmin);
   const refreshUnread = useNotificationsStore((state) => state.refresh);
   const [approvalsCount, setApprovalsCount] = useState(0);
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -27,6 +30,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .then((stats) => setApprovalsCount(stats.pendingReview))
       .catch(() => setApprovalsCount(0));
   }, [loadAdmin, refreshUnread]);
+
+  // Any request elsewhere in the app can discover the session died (401) — react to
+  // it the same way everywhere: drop the cached admin and bounce to login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setAdmin(null);
+      router.push('/login');
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [router, setAdmin]);
 
   // Escape closes the drawer, and the page behind it must not scroll while it is up.
   useEffect(() => {

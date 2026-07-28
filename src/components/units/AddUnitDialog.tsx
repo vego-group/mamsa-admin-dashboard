@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useT } from '@/i18n';
-import { unitsApi } from '@/lib/api';
+import { ApiError, unitsApi } from '@/lib/api';
 import { SAUDI_CITIES, UNIT_TYPE } from '@/lib/constants';
 import type { UnitDraft } from '@/types';
 
@@ -67,8 +67,8 @@ export function AddUnitDialog({ open, onOpenChange, onCreated }: AddUnitDialogPr
       await unitsApi.create({ ...draft, name: draft.name.trim(), district: draft.district.trim() });
       onOpenChange(false);
       onCreated();
-    } catch {
-      setError(t.auth.errors.network);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setPending(false);
     }

@@ -36,10 +36,12 @@ import { Card } from '@/components/ui/card';
 import { useT } from '@/i18n';
 import { dashboardApi } from '@/lib/api';
 import { formatDate, formatPercent, formatSAR } from '@/lib/utils/format';
-import type { ApprovalRequest, DashboardSummary } from '@/types';
+import type { ApprovalRequest, Cancellation, DashboardSummary } from '@/types';
 
 /** Newest requests first; the full queue lives on the Approvals screen. */
 const LATEST_REQUESTS = 5;
+/** Newest cancellations first; the full log lives on the Cancellations screen. */
+const RECENT_CANCELLATIONS = 5;
 
 export default function OverviewPage() {
   const t = useT();
@@ -86,6 +88,39 @@ export default function OverviewPage() {
       header: t.dashboard.submitted,
       align: 'end',
       cell: (row) => <LtrText className="text-slate-500">{formatDate(row.submittedAt)}</LtrText>,
+    },
+  ];
+
+  const cancellationColumns: Array<Column<Cancellation>> = [
+    {
+      key: 'bookingCode',
+      header: t.dashboard.booking,
+      width: '18%',
+      cell: (row) => <LtrText className="font-semibold text-slate-900">{row.bookingCode}</LtrText>,
+    },
+    {
+      key: 'partner',
+      header: t.dashboard.partner,
+      width: '22%',
+      cell: (row) => <span className="font-medium text-slate-800">{row.partnerName}</span>,
+    },
+    {
+      key: 'property',
+      header: t.dashboard.property,
+      width: '26%',
+      cell: (row) => row.unitName,
+    },
+    {
+      key: 'refundStatus',
+      header: t.dashboard.refundStatus,
+      width: '16%',
+      cell: (row) => <StatusBadge status={row.refundStatus} />,
+    },
+    {
+      key: 'cancelledAt',
+      header: t.dashboard.cancelledAt,
+      align: 'end',
+      cell: (row) => <LtrText className="text-slate-500">{formatDate(row.at)}</LtrText>,
     },
   ];
 
@@ -232,6 +267,30 @@ export default function OverviewPage() {
             </div>
             <Link
               href="/approvals"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-brand"
+            >
+              <ArrowRight className="h-4 w-4 rtl:rotate-180" />
+              {t.common.viewAll}
+            </Link>
+          </div>
+        }
+      />
+
+      <DataTable
+        columns={cancellationColumns}
+        rows={summary.recentHostCancellations.slice(0, RECENT_CANCELLATIONS)}
+        rowKey={(row) => row.id}
+        emptyTitle={t.dashboard.hostCancellationsEmpty}
+        header={
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                {t.dashboard.hostCancellationsTitle}
+              </h3>
+              <p className="mt-0.5 text-sm text-slate-500">{t.dashboard.hostCancellationsSubtitle}</p>
+            </div>
+            <Link
+              href="/cancellations"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-brand"
             >
               <ArrowRight className="h-4 w-4 rtl:rotate-180" />

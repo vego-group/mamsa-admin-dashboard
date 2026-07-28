@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, DollarSign, RotateCcw, TrendingDown } from 'lucide-react';
 import {
   Avatar,
@@ -25,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { cancellationsApi } from '@/lib/api';
+import { ApiError, cancellationsApi } from '@/lib/api';
 import { CANCELLED_BY, REFUND_STATUS, type CancelledBy, type RefundStatus } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
@@ -36,6 +37,8 @@ const PAGE_SIZE = 10;
 
 export default function CancellationsPage() {
   const t = useT();
+  const searchParams = useSearchParams();
+  const openId = searchParams.get('open');
 
   const [cancelledBy, setCancelledBy] = useState<CancelledBy | 'all'>('all');
   const [refundStatus, setRefundStatus] = useState<RefundStatus | 'all'>('all');
@@ -84,6 +87,14 @@ export default function CancellationsPage() {
   }, [reloadToken]);
 
   useEffect(() => setPage(1), [cancelledBy, refundStatus, search]);
+
+  useEffect(() => {
+    // There is no GET /admin/cancellations/:id, so a ?open=<id> deep link can only
+    // be honored once the row shows up in the loaded (filtered/paginated) list.
+    if (!openId || !result) return;
+    const match = result.items.find((row) => row.id === openId);
+    if (match) setInspecting(match);
+  }, [openId, result]);
 
   const tabs: FilterTabItem[] = [
     { value: 'all', label: t.cancellations.all, count: stats?.total },
@@ -357,9 +368,18 @@ export default function CancellationsPage() {
         confirmLabel={t.cancellations.retryRefund}
         onConfirm={async () => {
           if (!retrying) return;
-          await cancellationsApi.retryRefund(retrying.id);
-          setRetrying(null);
-          reload();
+          try {
+            await cancellationsApi.retryRefund(retrying.bookingId);
+            setRetrying(null);
+            reload();
+          } catch (err) {
+            // The refund's state moved under us — refetch so the row reflects reality.
+            if (err instanceof ApiError && err.code === 'CONFLICT') {
+              reload();
+              return;
+            }
+            throw err;
+          }
         }}
       />
     </div>

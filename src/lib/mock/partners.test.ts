@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PARTNER_STATUS, PARTNER_TYPE } from '@/lib/constants';
+import { PARTNER_TYPE } from '@/lib/constants';
 import { mockPartners } from './index';
 
 describe('mockPartners.list', () => {
-  it('sorts partners awaiting verification to the front by default', async () => {
-    const { items } = await mockPartners.list({ pageSize: 50 });
-    const statuses = items.map((partner) => partner.status);
-    const lastPending = statuses.lastIndexOf(PARTNER_STATUS.PENDING);
-    const firstSettled = statuses.findIndex((status) => status !== PARTNER_STATUS.PENDING);
-
-    expect(lastPending).toBeGreaterThanOrEqual(0);
-    expect(lastPending).toBeLessThan(firstSettled);
-  });
-
-  it('lets an explicit sort override the pending-first default', async () => {
+  it('sorts by an explicit column', async () => {
     const { items } = await mockPartners.list({ sortBy: 'revenue', sortDir: 'desc', pageSize: 50 });
     const revenues = items.map((partner) => partner.revenue);
 

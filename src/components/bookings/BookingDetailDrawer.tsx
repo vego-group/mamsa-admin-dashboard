@@ -120,31 +120,19 @@ export function BookingDetailDrawer({ bookingId, onOpenChange }: BookingDetailDr
                   label={t.bookings.totalBookingAmount}
                   value={formatSAR(detail.total)}
                 />
-                {/* Mamsa-owned units have no partner split — the 2%/98% lines would
-                    be a lie there, so the note replaces them. */}
-                {!detail.mamsaOwned && (
-                  <>
-                    <DrawerStatRow
-                      label={t.bookings.commissionWithRate(commissionRateLabel)}
-                      value={formatSAR(detail.commission)}
-                    />
-                    <DrawerStatRow
-                      label={t.bookings.partnerEarningWithRate(partnerRateLabel)}
-                      value={formatSAR(detail.partnerShare)}
-                    />
-                  </>
-                )}
+                <DrawerStatRow
+                  label={t.bookings.commissionWithRate(commissionRateLabel)}
+                  value={formatSAR(detail.commission)}
+                />
+                <DrawerStatRow
+                  label={t.bookings.partnerEarningWithRate(partnerRateLabel)}
+                  value={formatSAR(detail.partnerShare)}
+                />
                 <DrawerStatRow
                   label={t.bookings.nightlyRate}
                   value={`${formatSAR(detail.nightlyRate)} ${t.bookings.perNight}`}
                 />
               </dl>
-
-              {detail.mamsaOwned && (
-                <p className="mt-3 rounded-xl bg-status-blueSoft px-3.5 py-2.5 text-sm text-status-blue">
-                  {t.bookings.mamsaOwned}
-                </p>
-              )}
             </DrawerSection>
 
             <DrawerSection title={t.bookings.paymentSection}>

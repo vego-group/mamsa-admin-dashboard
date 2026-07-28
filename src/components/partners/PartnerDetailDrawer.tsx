@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, FileText, Mail, MapPin, Phone, Star } from 'lucide-react';
+import { CalendarDays, CircleX, FileText, Mail, MapPin, Phone, Star } from 'lucide-react';
 import { Avatar, ErrorState, LtrText, PdfViewer, StatusBadge } from '@/components/common';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,8 +15,8 @@ import {
 } from '@/components/ui/drawer';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { partnersApi } from '@/lib/api';
-import { PARTNER_STATUS } from '@/lib/constants';
+import { ApiError, partnersApi } from '@/lib/api';
+import { DOCUMENT_STATUS, PARTNER_STATUS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatPercent, formatPhone, formatSAR } from '@/lib/utils/format';
 import type { ID, Partner, PartnerDetail, PartnerDocument } from '@/types';
@@ -24,10 +24,12 @@ import type { ID, Partner, PartnerDetail, PartnerDocument } from '@/types';
 export interface PartnerDetailDrawerProps {
   partnerId: ID | null;
   onOpenChange: (open: boolean) => void;
-  /** Pending partner: admit the applicant and grant the verified badge in one act. */
-  onApproveVerify: (partner: Partner) => void;
+  /** Pending partner: admit the applicant into active status. Does not touch verification. */
+  onApprove: (partner: Partner) => void;
   /** Pending partner: turn the application down — a reason is always required. */
   onReject: (partner: Partner) => void;
+  /** Active, unverified partner: grant the verified badge. */
+  onVerify: (partner: Partner) => void;
   onRevokeVerification: (partner: Partner) => void;
   /** Active partner: suspend with a required reason. */
   onSuspend: (partner: Partner) => void;
@@ -36,14 +38,16 @@ export interface PartnerDetailDrawerProps {
 export function PartnerDetailDrawer({
   partnerId,
   onOpenChange,
-  onApproveVerify,
+  onApprove,
   onReject,
+  onVerify,
   onRevokeVerification,
   onSuspend,
 }: PartnerDetailDrawerProps) {
   const t = useT();
   const [detail, setDetail] = useState<PartnerDetail | null>(null);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const [openDocId, setOpenDocId] = useState<ID | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -55,12 +59,17 @@ export function PartnerDetailDrawer({
     let stale = false;
     setDetail(null);
     setError(false);
+    setErrorMessage(undefined);
     setOpenDocId(null);
 
     partnersApi
       .get(partnerId)
       .then((result) => !stale && setDetail(result))
-      .catch(() => !stale && setError(true));
+      .catch((err) => {
+        if (stale) return;
+        setError(true);
+        setErrorMessage(err instanceof ApiError ? err.message : undefined);
+      });
 
     return () => {
       stale = true;
@@ -76,7 +85,7 @@ export function PartnerDetailDrawer({
 
         {error ? (
           <DrawerBody>
-            <ErrorState onRetry={reload} />
+            <ErrorState description={errorMessage} onRetry={reload} />
           </DrawerBody>
         ) : !detail ? (
           <DrawerBody aria-busy>
@@ -119,6 +128,16 @@ export function PartnerDetailDrawer({
                   </p>
                 </div>
               </div>
+
+              {detail.status === PARTNER_STATUS.REJECTED && detail.rejectionReason && (
+                <p className="mx-5 mt-4 flex items-start gap-2.5 rounded-xl bg-status-redSoft px-3.5 py-3 text-sm text-status-red">
+                  <CircleX className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>
+                    <span className="block font-semibold">{t.approvalDetail.rejectionReason}</span>
+                    <span className="mt-0.5 block">{detail.rejectionReason}</span>
+                  </span>
+                </p>
+              )}
 
               <DrawerSection title={t.partners.contact}>
                 <DrawerContactRow icon={Mail}>
@@ -172,15 +191,27 @@ export function PartnerDetailDrawer({
               </DrawerSection>
 
               <DrawerSection title={t.partners.documents}>
+                <p
+                  className={cn(
+                    'mb-2 text-xs font-medium',
+                    detail.documentsComplete ? 'text-status-green' : 'text-status-amber',
+                  )}
+                >
+                  {detail.documentsComplete
+                    ? t.partners.documentsComplete
+                    : t.partners.documentsIncomplete}
+                </p>
                 <ul className="space-y-2">
                   {detail.documents.map((document) => (
                     <DocumentRow
                       key={document.id}
+                      partnerId={detail.id}
                       document={document}
                       open={document.id === openDocId}
                       onToggle={() =>
                         setOpenDocId((current) => (current === document.id ? null : document.id))
                       }
+                      onVerified={reload}
                     />
                   ))}
                 </ul>
@@ -192,11 +223,12 @@ export function PartnerDetailDrawer({
             </DrawerBody>
 
             {/* Actions follow the partner's state: an applicant is admitted or turned
-                down; an active partner can only lose verification or be suspended. */}
+                down; an active partner can independently gain or lose the verified
+                badge, and can always be suspended. */}
             {detail.status === PARTNER_STATUS.PENDING && (
               <DrawerFooter>
-                <Button variant="success" className="flex-1" onClick={() => onApproveVerify(detail)}>
-                  {t.partners.approveVerify}
+                <Button variant="success" className="flex-1" onClick={() => onApprove(detail)}>
+                  {t.partners.approve}
                 </Button>
                 <Button variant="destructive" className="flex-1" onClick={() => onReject(detail)}>
                   {t.partners.reject}
@@ -205,13 +237,19 @@ export function PartnerDetailDrawer({
             )}
             {detail.status === PARTNER_STATUS.ACTIVE && (
               <DrawerFooter>
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => onRevokeVerification(detail)}
-                >
-                  {t.partners.revokeVerification}
-                </Button>
+                {detail.verified ? (
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => onRevokeVerification(detail)}
+                  >
+                    {t.partners.revokeVerification}
+                  </Button>
+                ) : (
+                  <Button variant="success" className="flex-1" onClick={() => onVerify(detail)}>
+                    {t.partners.verify}
+                  </Button>
+                )}
                 <Button variant="destructive" className="flex-1" onClick={() => onSuspend(detail)}>
                   {t.partners.suspend}
                 </Button>
@@ -225,25 +263,44 @@ export function PartnerDetailDrawer({
 }
 
 function DocumentRow({
+  partnerId,
   document,
   open,
   onToggle,
+  onVerified,
 }: {
+  partnerId: ID;
   document: PartnerDocument;
   open: boolean;
   onToggle: () => void;
+  onVerified: () => void;
 }) {
+  const t = useT();
+  const [verifying, setVerifying] = useState(false);
+
+  async function handleVerify() {
+    setVerifying(true);
+    try {
+      await partnersApi.verifyDocument(partnerId, document.id);
+      onVerified();
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   return (
-    <li>
+    <li
+      className={cn(
+        'flex items-center gap-3 rounded-xl bg-surface-page px-3.5 py-3 transition-colors',
+        'hover:bg-surface-muted',
+        open && 'ring-1 ring-brand/30',
+      )}
+    >
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className={cn(
-          'flex w-full items-center gap-3 rounded-xl bg-surface-page px-3.5 py-3 text-start transition-colors',
-          'hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30',
-          open && 'ring-1 ring-brand/30',
-        )}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
       >
         <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
         <span className="min-w-0 flex-1">
@@ -252,8 +309,22 @@ function DocumentRow({
             <LtrText className="block truncate text-xs text-slate-400">{document.value}</LtrText>
           )}
         </span>
-        <StatusBadge status={document.status} dot={false} className="shrink-0" />
       </button>
+      <StatusBadge status={document.status} dot={false} className="shrink-0" />
+      {document.status === DOCUMENT_STATUS.PENDING_REVIEW && (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="shrink-0"
+          disabled={verifying}
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleVerify();
+          }}
+        >
+          {t.partners.verifyDocument}
+        </Button>
+      )}
     </li>
   );
 }

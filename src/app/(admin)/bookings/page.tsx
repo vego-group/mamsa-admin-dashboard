@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChevronRight, CreditCard, DollarSign, Download, FileText, TrendingUp } from 'lucide-react';
 import {
   Avatar,
@@ -28,6 +29,7 @@ const PAGE_SIZE = 10;
 
 export default function BookingsPage() {
   const t = useT();
+  const searchParams = useSearchParams();
 
   const [status, setStatus] = useState<BookingStatus | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -38,7 +40,8 @@ export default function BookingsPage() {
   const [stats, setStats] = useState<BookingStats | null>(null);
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState(false);
-  const [inspecting, setInspecting] = useState<ID | null>(null);
+  // Seeded from ?open=<id> so a notification's deep link pops the drawer on arrival.
+  const [inspecting, setInspecting] = useState<ID | null>(() => searchParams.get('open'));
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);

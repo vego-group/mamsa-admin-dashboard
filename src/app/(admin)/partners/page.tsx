@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Building2, CircleCheck, Eye, Star, TrendingUp } from 'lucide-react';
 import {
   Avatar,
@@ -21,7 +22,7 @@ import { AddPartnerDialog } from '@/components/partners/AddPartnerDialog';
 import { PartnerDetailDrawer } from '@/components/partners/PartnerDetailDrawer';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
-import { partnersApi } from '@/lib/api';
+import { ApiError, partnersApi } from '@/lib/api';
 import { PARTNER_TYPE } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatSAR } from '@/lib/utils/format';
@@ -30,23 +31,26 @@ import type { ID, Paginated, Partner, PartnerStats } from '@/types';
 const PAGE_SIZE = 8;
 
 type TypeFilter = Partner['type'] | 'all';
-type ActionKind = 'approveVerify' | 'reject' | 'revoke' | 'suspend';
+type ActionKind = 'approve' | 'reject' | 'verify' | 'revoke' | 'suspend';
 type PendingAction = { kind: ActionKind; partner: Partner } | null;
 
 export default function PartnersPage() {
   const t = useT();
+  const searchParams = useSearchParams();
 
   const [type, setType] = useState<TypeFilter>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  // Unsorted by default so the API's own order — pending first — survives.
+  // Unsorted by default — BACKEND_SPEC §5.5 gives no default-order guarantee for partners.
   const [sort, setSort] = useState<{ by: string; dir: 'asc' | 'desc' } | null>(null);
 
   const [result, setResult] = useState<Paginated<Partner> | null>(null);
   const [stats, setStats] = useState<PartnerStats | null>(null);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
-  const [inspecting, setInspecting] = useState<ID | null>(null);
+  // Seeded from ?open=<id> so a notification's deep link pops the drawer on arrival.
+  const [inspecting, setInspecting] = useState<ID | null>(() => searchParams.get('open'));
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [adding, setAdding] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -56,12 +60,17 @@ export default function PartnersPage() {
   useEffect(() => {
     let stale = false;
     setError(false);
+    setErrorMessage(undefined);
     setResult(null);
 
     partnersApi
       .list({ type, search, page, pageSize: PAGE_SIZE, sortBy: sort?.by, sortDir: sort?.dir })
       .then((response) => !stale && setResult(response))
-      .catch(() => !stale && setError(true));
+      .catch((err) => {
+        if (stale) return;
+        setError(true);
+        setErrorMessage(err instanceof ApiError ? err.message : undefined);
+      });
 
     return () => {
       stale = true;
@@ -232,9 +241,18 @@ export default function PartnersPage() {
 
   async function runAction(call: () => Promise<unknown>) {
     if (!target) return;
-    await call();
-    setPendingAction(null);
-    reload();
+    try {
+      await call();
+      setPendingAction(null);
+      reload();
+    } catch (err) {
+      // The partner's state moved under us — refetch so the row reflects reality.
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        reload();
+        return;
+      }
+      throw err;
+    }
   }
 
   return (
@@ -284,6 +302,7 @@ export default function PartnersPage() {
         rowKey={(row) => row.id}
         loading={!result && !error}
         error={error}
+        errorDescription={errorMessage}
         onRetry={reload}
         onRowClick={(row) => setInspecting(row.id)}
         emptyTitle={t.partners.empty}
@@ -322,8 +341,9 @@ export default function PartnersPage() {
       <PartnerDetailDrawer
         partnerId={inspecting}
         onOpenChange={(open) => !open && setInspecting(null)}
-        onApproveVerify={(partner) => openAction('approveVerify', partner)}
+        onApprove={(partner) => openAction('approve', partner)}
         onReject={(partner) => openAction('reject', partner)}
+        onVerify={(partner) => openAction('verify', partner)}
         onRevokeVerification={(partner) => openAction('revoke', partner)}
         onSuspend={(partner) => openAction('suspend', partner)}
       />
@@ -331,23 +351,15 @@ export default function PartnersPage() {
       <AddPartnerDialog open={adding} onOpenChange={setAdding} onInvited={reload} />
 
       <ConfirmDialog
-        open={pendingAction?.kind === 'approveVerify'}
+        open={pendingAction?.kind === 'approve'}
         onOpenChange={(open) => !open && setPendingAction(null)}
-        title={t.partners.approveVerifyTitle}
+        title={t.partners.approveTitle}
         variant="success"
         description={
-          <RichText
-            template={t.partners.approveVerifyQuestion}
-            values={{ name: target?.name ?? '' }}
-          />
+          <RichText template={t.partners.approveQuestion} values={{ name: target?.name ?? '' }} />
         }
-        confirmLabel={t.partners.approveVerify}
-        onConfirm={() =>
-          runAction(async () => {
-            await partnersApi.approve(target!.id);
-            await partnersApi.verify(target!.id);
-          })
-        }
+        confirmLabel={t.partners.approve}
+        onConfirm={() => runAction(() => partnersApi.approve(target!.id))}
       />
 
       <ConfirmDialog
@@ -362,6 +374,18 @@ export default function PartnersPage() {
         reasonLabel={t.partners.reasonForPartner}
         confirmLabel={t.partners.reject}
         onConfirm={({ reason }) => runAction(() => partnersApi.reject(target!.id, reason ?? ''))}
+      />
+
+      <ConfirmDialog
+        open={pendingAction?.kind === 'verify'}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        title={t.partners.verifyTitle}
+        variant="success"
+        description={
+          <RichText template={t.partners.verifyQuestion} values={{ name: target?.name ?? '' }} />
+        }
+        confirmLabel={t.partners.verify}
+        onConfirm={() => runAction(() => partnersApi.verify(target!.id))}
       />
 
       <ConfirmDialog

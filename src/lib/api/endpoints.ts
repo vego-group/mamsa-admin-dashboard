@@ -2,13 +2,13 @@
  * Every backend path in one place.
  *
  * Endpoints are root-mounted on the API host — there is no /api/v1 prefix.
- * Paths marked TODO are not yet confirmed against the admin contract; the shape is
- * kept so Phase 4 is a fill-in rather than a refactor.
+ * Confirmed against the live backend per BACKEND_SPEC.md / the integration guide
+ * (89 backend tests green, §9 acceptance checklist passed).
  */
 export const endpoints = {
   auth: {
-    requestOtp: '/admin/auth/request-otp', // TODO confirm
-    verifyOtp: '/admin/auth/verify-otp', // TODO confirm
+    requestOtp: '/admin/auth/request-otp',
+    verifyOtp: '/admin/auth/verify-otp',
     me: '/admin/me',
     logout: '/admin/auth/logout',
   },
@@ -24,7 +24,7 @@ export const endpoints = {
   users: {
     list: '/admin/users',
     stats: '/admin/users/stats',
-    invite: '/admin/users/invite', // TODO confirm
+    invite: '/admin/users/invite',
 
     detail: (id: string) => `/admin/users/${id}`,
     status: (id: string) => `/admin/users/${id}/status`,
@@ -33,12 +33,12 @@ export const endpoints = {
   partners: {
     list: '/admin/partners',
     stats: '/admin/partners/stats',
-    invite: '/admin/partners/invite', // TODO confirm
+    invite: '/admin/partners/invite',
     detail: (id: string) => `/admin/partners/${id}`,
     approve: (id: string) => `/admin/partners/${id}/approve`,
     reject: (id: string) => `/admin/partners/${id}/reject`,
     suspend: (id: string) => `/admin/partners/${id}/suspend`,
-    verify: (id: string) => `/admin/partners/${id}/verify`, // TODO confirm
+    verify: (id: string) => `/admin/partners/${id}/verify`,
     revokeVerification: (id: string) => `/admin/partners/${id}/revoke-verification`,
     verifyDocument: (partnerId: string, documentId: string) =>
       `/admin/partners/${partnerId}/documents/${documentId}/verify`,
@@ -46,9 +46,9 @@ export const endpoints = {
   units: {
     list: '/admin/units',
     stats: '/admin/units/stats',
-    create: '/admin/units', // TODO confirm
+    create: '/admin/units',
     detail: (id: string) => `/admin/units/${id}`,
-    unpublish: (id: string) => `/admin/units/${id}/unpublish`, // TODO confirm
+    unpublish: (id: string) => `/admin/units/${id}/unpublish`,
   },
   approvals: {
     list: '/admin/approvals',
@@ -67,7 +67,7 @@ export const endpoints = {
     list: '/admin/cancellations',
     stats: '/admin/cancellations/stats',
     highRisk: '/admin/cancellations/high-risk-partners',
-    retryRefund: (id: string) => `/admin/cancellations/${id}/retry-refund`, // TODO confirm
+    retryRefund: (id: string) => `/admin/cancellations/${id}/retry-refund`,
   },
   reports: {
     summary: '/admin/reports/summary',

@@ -25,6 +25,7 @@ export interface DataTableProps<T> {
   rowKey: (row: T) => string;
   loading?: boolean;
   error?: boolean;
+  errorDescription?: string;
   onRetry?: () => void;
   onRowClick?: (row: T) => void;
   emptyTitle?: string;
@@ -45,6 +46,7 @@ export function DataTable<T>({
   rowKey,
   loading,
   error,
+  errorDescription,
   onRetry,
   onRowClick,
   emptyTitle,
@@ -68,7 +70,7 @@ export function DataTable<T>({
   );
 
   if (loading) return shell(<TableSkeleton columns={columns.length} />);
-  if (error) return shell(<ErrorState onRetry={onRetry} />);
+  if (error) return shell(<ErrorState description={errorDescription} onRetry={onRetry} />);
   if (rows.length === 0) {
     return shell(<EmptyState title={emptyTitle ?? t.common.noResults} description={emptyDescription} />);
   }

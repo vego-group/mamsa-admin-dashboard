@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Download, DollarSign, FileText, TrendingUp } from 'lucide-react';
 import {
   Avatar,
+  EmptyState,
   ErrorState,
   PageHeader,
   Segmented,
@@ -179,89 +180,115 @@ export default function ReportsPage() {
             />
           </div>
 
-          <RevenueChart
-            data={summary.revenueSeries}
-            title={t.reports.revenueOverTimeTitle}
-            description={t.reports.revenueOverTimeSubtitle}
-            showRangeSwitch={false}
-            showLegend
-            height={320}
-          />
+          {summary.revenueSeries.length === 0 ? (
+            <Card>
+              <EmptyState title={t.reports.emptyRevenue} />
+            </Card>
+          ) : (
+            <>
+              <RevenueChart
+                data={summary.revenueSeries}
+                title={t.reports.revenueOverTimeTitle}
+                description={t.reports.revenueOverTimeSubtitle}
+                showRangeSwitch={false}
+                showLegend
+                height={320}
+              />
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <HorizontalBarChart
-              data={summary.revenueByCity}
-              title={t.reports.revenueByCityTitle}
-              seriesLabel={t.reports.revenue}
-              formatLabel={city}
-              formatValue={money}
-              formatTick={millions}
-            />
-            <BookingStatusChart data={summary.bookingStatusSlices} />
-          </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                <HorizontalBarChart
+                  data={summary.revenueByCity}
+                  title={t.reports.revenueByCityTitle}
+                  seriesLabel={t.reports.revenue}
+                  formatLabel={city}
+                  formatValue={money}
+                  formatTick={millions}
+                />
+                <BookingStatusChart data={summary.bookingStatusSlices} />
+              </div>
+            </>
+          )}
         </>
       )}
 
       {tab === 'bookings' && (
-        <CategoryBarChart
-          data={summary.bookingVolume}
-          title={t.reports.bookingVolumeTitle}
-          seriesLabel={t.reports.bookings}
-          formatLabel={month}
-          highlightPeak
-          height={400}
-        />
+        summary.bookingVolume.length === 0 ? (
+          <Card>
+            <EmptyState title={t.reports.emptyBookings} />
+          </Card>
+        ) : (
+          <CategoryBarChart
+            data={summary.bookingVolume}
+            title={t.reports.bookingVolumeTitle}
+            seriesLabel={t.reports.bookings}
+            formatLabel={month}
+            highlightPeak
+            height={400}
+          />
+        )
       )}
 
       {tab === 'partners' && (
-        <>
-          <CategoryBarChart
-            data={summary.topPartners.map((partner) => ({
-              label: partner.name,
-              value: partner.revenue,
-            }))}
-            title={t.reports.topPartnersTitle}
-            seriesLabel={t.reports.revenue}
-            formatLabel={shortPartnerName}
-            formatValue={money}
-            formatTick={thousandsTick}
-            height={360}
-          />
+        summary.topPartners.length === 0 ? (
+          <Card>
+            <EmptyState title={t.reports.emptyPartners} />
+          </Card>
+        ) : (
+          <>
+            <CategoryBarChart
+              data={summary.topPartners.map((partner) => ({
+                label: partner.name,
+                value: partner.revenue,
+              }))}
+              title={t.reports.topPartnersTitle}
+              seriesLabel={t.reports.revenue}
+              formatLabel={shortPartnerName}
+              formatValue={money}
+              formatTick={thousandsTick}
+              height={360}
+            />
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            {summary.topPartners.map((partner, index) => (
-              <Card
-                key={partner.partnerId}
-                className="flex flex-wrap items-center gap-3 p-4"
-              >
-                <span className="text-lg font-semibold tabular-nums text-slate-300">
-                  #{index + 1}
-                </span>
-                <Avatar name={partner.name} />
+            <div className="grid gap-4 xl:grid-cols-2">
+              {summary.topPartners.map((partner, index) => (
+                <Card
+                  key={partner.partnerId}
+                  className="flex flex-wrap items-center gap-3 p-4"
+                >
+                  <span className="text-lg font-semibold tabular-nums text-slate-300">
+                    #{index + 1}
+                  </span>
+                  <Avatar name={partner.name} />
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-slate-900">{partner.name}</p>
-                  <p className="truncate text-sm text-slate-500">
-                    {city(partner.city)} · {t.reports.unitsCount(partner.units)}
-                  </p>
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-slate-900">{partner.name}</p>
+                    <p className="truncate text-sm text-slate-500">
+                      {city(partner.city)} · {t.reports.unitsCount(partner.units)}
+                    </p>
+                  </div>
 
-                <div className="text-end">
-                  <p className="font-semibold tabular-nums text-slate-900">
-                    {money(partner.revenue)}
-                  </p>
-                  <p className="text-sm tabular-nums text-slate-500">
-                    {t.reports.bookingsCount(partner.bookings)}
-                  </p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </>
+                  <div className="text-end">
+                    <p className="font-semibold tabular-nums text-slate-900">
+                      {money(partner.revenue)}
+                    </p>
+                    <p className="text-sm tabular-nums text-slate-500">
+                      {t.reports.bookingsCount(partner.bookings)}
+                    </p>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )
       )}
 
       {tab === 'occupancy' && (
-        <OccupancyChart data={summary.occupancySeries} average={summary.occupancyAverage} />
+        summary.occupancySeries.length === 0 ? (
+          <Card>
+            <EmptyState title={t.reports.emptyOccupancy} />
+          </Card>
+        ) : (
+          <OccupancyChart data={summary.occupancySeries} average={summary.occupancyAverage} />
+        )
       )}
     </div>
   );

@@ -6,8 +6,8 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LtrText } from '@/components/common';
 import { useT } from '@/i18n';
-import { authApi } from '@/lib/api';
-import { OTP_LENGTH, OTP_MAX_ATTEMPTS, OTP_RESEND_SECONDS, PHONE_PREFIX } from '@/lib/constants';
+import { ApiError, authApi } from '@/lib/api';
+import { OTP_LENGTH, OTP_RESEND_SECONDS, PHONE_PREFIX } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatPhone } from '@/lib/utils/format';
 import { useAuthStore } from '@/stores';
@@ -22,7 +22,6 @@ export default function LoginPage() {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState<string[]>(Array(OTP_LENGTH).fill(''));
-  const [attemptsLeft, setAttemptsLeft] = useState(OTP_MAX_ATTEMPTS);
   const [countdown, setCountdown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -49,10 +48,9 @@ export default function LoginPage() {
       await authApi.requestOtp(`${PHONE_PREFIX}${phone}`);
       setStep('otp');
       setCountdown(OTP_RESEND_SECONDS);
-      setAttemptsLeft(OTP_MAX_ATTEMPTS);
       setTimeout(() => inputsRef.current[0]?.focus(), 50);
-    } catch {
-      setError(t.auth.errors.network);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setPending(false);
     }
@@ -67,16 +65,10 @@ export default function LoginPage() {
       const result = await authApi.verifyOtp(`${PHONE_PREFIX}${phone}`, value);
       setAdmin(result.admin);
       router.push('/overview');
-    } catch {
-      const remaining = attemptsLeft - 1;
-      setAttemptsLeft(remaining);
+    } catch (err) {
       setCode(Array(OTP_LENGTH).fill(''));
       inputsRef.current[0]?.focus();
-      setError(
-        remaining <= 0
-          ? t.auth.errors.locked
-          : `${t.auth.errors.invalidCode} — ${remaining} ${t.auth.errors.attemptsLeft}`,
-      );
+      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setPending(false);
     }

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useT } from '@/i18n';
-import { usersApi } from '@/lib/api';
+import { ApiError, usersApi } from '@/lib/api';
 import { PHONE_PREFIX } from '@/lib/constants';
 
 export interface InviteUserDialogProps {
@@ -53,8 +53,8 @@ export function InviteUserDialog({ open, onOpenChange, onInvited }: InviteUserDi
       await usersApi.invite(`${PHONE_PREFIX}${phone}`, name.trim() || undefined);
       onOpenChange(false);
       onInvited();
-    } catch {
-      setError(t.auth.errors.network);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setPending(false);
     }

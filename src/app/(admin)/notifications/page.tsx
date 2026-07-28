@@ -48,12 +48,16 @@ const CATEGORY_TONE: Record<NotificationCategory, string> = {
   refund: 'bg-status-amberSoft text-status-amber',
 };
 
-/** Where each notification hands off. Only some entities have a detail route yet. */
+/**
+ * Where each notification hands off. Approval has a real detail route; booking,
+ * partner and cancellation deep-link via `?open=<id>`, which the list page reads
+ * on mount to pop the matching row's drawer.
+ */
 const ENTITY_ROUTE: Record<NonNullable<NotificationItem['entity']>['type'], (id: ID) => string> = {
   approval: (id) => `/approvals/${id}`,
-  booking: () => '/bookings',
-  partner: () => '/partners',
-  cancellation: () => '/cancellations',
+  booking: (id) => `/bookings?open=${id}`,
+  partner: (id) => `/partners?open=${id}`,
+  cancellation: (id) => `/cancellations?open=${id}`,
   report: () => '/reports',
 };
 

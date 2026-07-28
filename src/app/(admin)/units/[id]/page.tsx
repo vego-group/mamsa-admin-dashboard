@@ -9,18 +9,20 @@ import {
   CircleCheck,
   CircleX,
   ExternalLink,
+  EyeOff,
   MapPin,
   Maximize,
   Star,
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ErrorState, LtrText, PdfViewer, StatusBadge } from '@/components/common';
+import { ConfirmDialog, ErrorState, LtrText, PdfViewer, RichText, StatusBadge } from '@/components/common';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { unitsApi } from '@/lib/api';
+import { ApiError, unitsApi } from '@/lib/api';
 import { UNIT_STATUS } from '@/lib/constants';
 import { formatPercent, formatSAR } from '@/lib/utils/format';
 import type { UnitDetail } from '@/types';
@@ -31,6 +33,7 @@ export default function UnitDetailPage({ params }: { params: { id: string } }) {
   const [detail, setDetail] = useState<UnitDetail | null>(null);
   const [error, setError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const [unpublishing, setUnpublishing] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -95,6 +98,18 @@ export default function UnitDetailPage({ params }: { params: { id: string } }) {
         {/* One lifecycle badge — an approved unit is published by definition. */}
         <StatusBadge status={detail.status} />
         {detail.mamsaOwned && <StatusBadge status="mamsa_owned" dot={false} />}
+
+        {detail.status === UNIT_STATUS.APPROVED && (
+          <Button
+            variant="destructive"
+            size="sm"
+            className="ms-auto"
+            onClick={() => setUnpublishing(true)}
+          >
+            <EyeOff className="h-4 w-4" />
+            {t.units.unpublish}
+          </Button>
+        )}
       </nav>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -220,6 +235,33 @@ export default function UnitDetailPage({ params }: { params: { id: string } }) {
           </Card>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={unpublishing}
+        onOpenChange={setUnpublishing}
+        title={t.units.unpublishTitle}
+        variant="destructive"
+        description={
+          <RichText template={t.units.unpublishQuestion} values={{ name: detail.name }} />
+        }
+        impact={t.units.unpublishConsequence}
+        requireReason
+        reasonLabel={t.units.unpublishReason}
+        confirmLabel={t.units.unpublish}
+        onConfirm={async ({ reason }) => {
+          try {
+            await unitsApi.unpublish(detail.id, reason ?? '');
+            setReloadToken((token) => token + 1);
+          } catch (err) {
+            // The unit's status moved under us — refetch so the badge reflects reality.
+            if (err instanceof ApiError && err.code === 'CONFLICT') {
+              setReloadToken((token) => token + 1);
+              return;
+            }
+            throw err;
+          }
+        }}
+      />
     </div>
   );
 }

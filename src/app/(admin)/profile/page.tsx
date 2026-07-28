@@ -16,7 +16,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { profileApi } from '@/lib/api';
+import { ApiError, profileApi } from '@/lib/api';
 import { OTP_LENGTH } from '@/lib/constants';
 import { formatDate, formatPhone } from '@/lib/utils/format';
 import { useAuthStore, useUiStore, type Locale } from '@/stores';
@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const [emailUnlocked, setEmailUnlocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [revoking, setRevoking] = useState<AdminSession | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -69,12 +70,15 @@ export default function ProfilePage() {
     if (!profile) return;
 
     setSaving(true);
+    setSaveError(null);
     try {
-      const updated = await profileApi.update({ name: name.trim(), email: email.trim(), phone });
+      const updated = await profileApi.update({ name: name.trim(), email: email.trim() });
       setProfile(updated);
       setAdmin(updated);
       setEmailUnlocked(false);
       setSavedAt(Date.now());
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setSaving(false);
     }
@@ -90,9 +94,12 @@ export default function ProfilePage() {
   }
 
   async function revoke(id: ID) {
-    await profileApi.revokeSession(id);
-    setSessions((current) => current.filter((session) => session.id !== id));
-    setRevoking(null);
+    try {
+      await profileApi.revokeSession(id);
+      setRevoking(null);
+    } finally {
+      profileApi.sessions().then(setSessions).catch(() => undefined);
+    }
   }
 
   if (error) {
@@ -205,6 +212,8 @@ export default function ProfilePage() {
             </select>
           </Field>
         </div>
+
+        {saveError && <p className="mt-4 text-sm text-status-red">{saveError}</p>}
 
         <div className="mt-5 flex items-center justify-end gap-3">
           {savedAt > 0 && !dirty && (

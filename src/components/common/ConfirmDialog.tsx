@@ -78,6 +78,7 @@ export function ConfirmDialog({
   const [notes, setNotes] = useState('');
   const [pending, setPending] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -85,6 +86,7 @@ export function ConfirmDialog({
       setNotes('');
       setTouched(false);
       setPending(false);
+      setError(null);
     }
   }, [open]);
 
@@ -95,12 +97,15 @@ export function ConfirmDialog({
     if (reasonMissing) return;
 
     setPending(true);
+    setError(null);
     try {
       await onConfirm({
         reason: requireReason ? reason.trim() : undefined,
         notes: withNotes ? notes.trim() : undefined,
       });
       onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setPending(false);
     }
@@ -156,6 +161,12 @@ export function ConfirmDialog({
 
           {impact && (
             <p className="rounded-xl bg-surface-muted px-3 py-2.5 text-sm text-slate-600">{impact}</p>
+          )}
+
+          {error && (
+            <p className="rounded-xl bg-status-redSoft px-3 py-2.5 text-center text-sm text-status-red">
+              {error}
+            </p>
           )}
 
           {requireReason && (

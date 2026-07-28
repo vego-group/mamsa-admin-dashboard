@@ -120,15 +120,7 @@ export const mockPartners = {
     }
     items = items.filter((p) => matches([p.name, p.code, p.email, p.phone, p.city], params?.search));
 
-    if (params?.sortBy) {
-      items = sortBy(items, params.sortBy as keyof Partner, params.sortDir ?? 'desc');
-    } else {
-      // Default order only: partners awaiting verification need the admin first.
-      items.sort(
-        (a, b) =>
-          Number(b.status === PARTNER_STATUS.PENDING) - Number(a.status === PARTNER_STATUS.PENDING),
-      );
-    }
+    items = sortBy(items, params?.sortBy as keyof Partner | undefined, params?.sortDir ?? 'desc');
 
     return delay(paginate(items, params));
   },

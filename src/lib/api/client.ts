@@ -22,6 +22,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Registered once by the authenticated app shell so the API layer can react to a
+ * lost session without importing the auth store directly (that store imports
+ * authApi, which is built on this module — a direct import would be circular).
+ */
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  onUnauthorized = handler;
+}
+
 export type QueryValue = string | number | boolean | null | undefined;
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -36,7 +48,8 @@ function buildUrl(path: string, params?: Record<string, QueryValue>): string {
 
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null || value === '' || value === 'all') continue;
+    if (value === undefined || value === null || value === '') continue;
+    if (value === 'all' && key !== 'range') continue;
     query.set(key, String(value));
   }
 
@@ -81,7 +94,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
-  if (!response.ok) throw await toApiError(response);
+  if (!response.ok) {
+    const error = await toApiError(response);
+    if (response.status === 401) onUnauthorized?.();
+    throw error;
+  }
   if (response.status === 204) return undefined as T;
 
   return (await response.json()) as T;

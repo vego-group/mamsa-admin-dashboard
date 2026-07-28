@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useT } from '@/i18n';
-import { partnersApi } from '@/lib/api';
+import { ApiError, partnersApi } from '@/lib/api';
 import { PARTNER_TYPE, PHONE_PREFIX } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import type { Partner } from '@/types';
@@ -56,8 +56,8 @@ export function AddPartnerDialog({ open, onOpenChange, onInvited }: AddPartnerDi
       await partnersApi.invite(`${PHONE_PREFIX}${phone}`, type, name.trim() || undefined);
       onOpenChange(false);
       onInvited();
-    } catch {
-      setError(t.auth.errors.network);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
     } finally {
       setPending(false);
     }
