@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ChevronRight, CreditCard, DollarSign, Download, FileText, TrendingUp } from 'lucide-react';
 import {
@@ -27,7 +27,7 @@ import type { Booking, BookingStats, ID, Paginated } from '@/types';
 
 const PAGE_SIZE = 10;
 
-export default function BookingsPage() {
+function BookingsPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
 
@@ -306,5 +306,13 @@ export default function BookingsPage() {
         onOpenChange={(open) => !open && setInspecting(null)}
       />
     </div>
+  );
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <BookingsPageContent />
+    </Suspense>
   );
 }

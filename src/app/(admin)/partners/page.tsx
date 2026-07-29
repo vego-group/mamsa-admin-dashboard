@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Building2, CircleCheck, Eye, Star, TrendingUp } from 'lucide-react';
 import {
@@ -34,7 +34,7 @@ type TypeFilter = Partner['type'] | 'all';
 type ActionKind = 'approve' | 'reject' | 'verify' | 'revoke' | 'suspend';
 type PendingAction = { kind: ActionKind; partner: Partner } | null;
 
-export default function PartnersPage() {
+function PartnersPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
 
@@ -414,5 +414,13 @@ export default function PartnersPage() {
         onConfirm={({ reason }) => runAction(() => partnersApi.suspend(target!.id, reason ?? ''))}
       />
     </div>
+  );
+}
+
+export default function PartnersPage() {
+  return (
+    <Suspense fallback={null}>
+      <PartnersPageContent />
+    </Suspense>
   );
 }

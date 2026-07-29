@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, DollarSign, RotateCcw, TrendingDown } from 'lucide-react';
 import {
@@ -35,7 +35,7 @@ import type { Cancellation, CancellationStats, HighRiskPartner, Paginated } from
 
 const PAGE_SIZE = 10;
 
-export default function CancellationsPage() {
+function CancellationsPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
   const openId = searchParams.get('open');
@@ -383,6 +383,14 @@ export default function CancellationsPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function CancellationsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CancellationsPageContent />
+    </Suspense>
   );
 }
 
