@@ -44,15 +44,21 @@ export function formatDate(iso: string | Date): string {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-export function formatDateTime(iso: string | Date): string {
+/** Latin digits on a 12-hour clock, matching every other timestamp in the console. */
+export function formatTime(iso: string | Date): string {
   const date = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
-  const time = new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   }).format(date);
-  return `${formatDate(date)} · ${time}`;
+}
+
+export function formatDateTime(iso: string | Date): string {
+  const date = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return `${formatDate(date)} · ${formatTime(date)}`;
 }
 
 /** +966 55 123 4567 — render inside a dir="ltr" island. */

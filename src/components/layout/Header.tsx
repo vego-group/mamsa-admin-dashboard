@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, ChevronRight, Globe, Menu, Search } from 'lucide-react';
+import { ChevronRight, Globe, Menu, Search } from 'lucide-react';
+import { NotificationBell } from '@/components/notifications';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/utils/cn';
-import { useAuthStore, useNotificationsStore, useUiStore } from '@/stores';
+import { useAuthStore, useUiStore } from '@/stores';
 import { NAV_GROUPS } from './nav-items';
 
 export function Header() {
@@ -14,7 +15,6 @@ export function Header() {
   const locale = useUiStore((state) => state.locale);
   const setLocale = useUiStore((state) => state.setLocale);
   const setMobileNav = useUiStore((state) => state.setMobileNav);
-  const unread = useNotificationsStore((state) => state.unreadCount);
   const admin = useAuthStore((state) => state.admin);
 
   const current = NAV_GROUPS.flatMap((group) => group.items).find(
@@ -66,18 +66,7 @@ export function Header() {
           {locale === 'ar' ? 'EN' : 'AR'}
         </button>
 
-        <Link
-          href="/notifications"
-          className="relative rounded-xl p-2 text-slate-500 transition-colors hover:bg-surface-muted"
-          aria-label={t.nav.notifications}
-        >
-          <Bell className="h-5 w-5" />
-          {unread > 0 && (
-            <span className="absolute end-1 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
-              {unread}
-            </span>
-          )}
-        </Link>
+        <NotificationBell />
 
         <Link
           href="/profile"

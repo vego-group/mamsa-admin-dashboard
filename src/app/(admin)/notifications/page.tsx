@@ -2,16 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Building2,
-  CalendarDays,
-  CheckCheck,
-  CircleX,
-  DollarSign,
-  Settings,
-  SquareCheck,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { CheckCheck } from 'lucide-react';
 import {
   EmptyState,
   ErrorState,
@@ -19,70 +10,37 @@ import {
   FilterTabs,
   PageHeader,
 } from '@/components/common';
+import { CATEGORY_ICON, CATEGORY_TONE, notificationHref } from '@/components/notifications';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { notificationsApi } from '@/lib/api';
 import { NOTIFICATION_CATEGORY, type NotificationCategory } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
-import { formatDateTime } from '@/lib/utils/format';
+import { formatDateTime, formatTime } from '@/lib/utils/format';
 import { useNotificationsStore } from '@/stores';
-import type { ID, NotificationItem } from '@/types';
-
-const CATEGORY_ICON: Record<NotificationCategory, LucideIcon> = {
-  approval: SquareCheck,
-  booking: CalendarDays,
-  cancellation: CircleX,
-  partner: Building2,
-  system: Settings,
-  refund: DollarSign,
-};
-
-const CATEGORY_TONE: Record<NotificationCategory, string> = {
-  approval: 'bg-status-greenSoft text-status-green',
-  booking: 'bg-status-blueSoft text-status-blue',
-  cancellation: 'bg-status-redSoft text-status-red',
-  partner: 'bg-status-sageSoft text-status-sage',
-  system: 'bg-status-greySoft text-status-grey',
-  refund: 'bg-status-amberSoft text-status-amber',
-};
-
-/**
- * Where each notification hands off. Approval has a real detail route; booking,
- * partner and cancellation deep-link via `?open=<id>`, which the list page reads
- * on mount to pop the matching row's drawer.
- */
-const ENTITY_ROUTE: Record<NonNullable<NotificationItem['entity']>['type'], (id: ID) => string> = {
-  approval: (id) => `/approvals/${id}`,
-  booking: (id) => `/bookings?open=${id}`,
-  partner: (id) => `/partners?open=${id}`,
-  cancellation: (id) => `/cancellations?open=${id}`,
-  report: () => '/reports',
-};
+import type { NotificationItem } from '@/types';
 
 type Scope = 'all' | 'unread';
 
 export default function NotificationsPage() {
   const t = useT();
   const router = useRouter();
-  const refreshBadge = useNotificationsStore((state) => state.refresh);
-  const markAllReadInStore = useNotificationsStore((state) => state.markAllRead);
+  // The feed is shared with the header bell, so opening one item here dims it there
+  // too — and a booking that arrives while this page is open shows up on the next poll.
+  const items = useNotificationsStore((state) => state.items);
+  const error = useNotificationsStore((state) => state.failed);
+  const unreadCount = useNotificationsStore((state) => state.unreadCount);
+  const loadFeed = useNotificationsStore((state) => state.loadFeed);
+  const markRead = useNotificationsStore((state) => state.markRead);
+  const markAllRead = useNotificationsStore((state) => state.markAllRead);
 
-  const [items, setItems] = useState<NotificationItem[] | null>(null);
-  const [error, setError] = useState(false);
   const [scope, setScope] = useState<Scope>('all');
   const [categories, setCategories] = useState<Set<NotificationCategory>>(new Set());
 
-  const load = useCallback(() => {
-    setError(false);
-    setItems(null);
-    notificationsApi.list().then(setItems).catch(() => setError(true));
-  }, []);
+  const load = useCallback(() => void loadFeed(), [loadFeed]);
 
   useEffect(load, [load]);
-
-  const unreadCount = items?.filter((item) => !item.read).length ?? 0;
 
   const visible = useMemo(() => {
     if (!items) return [];
@@ -103,22 +61,11 @@ export default function NotificationsPage() {
     });
   }
 
-  async function open(item: NotificationItem) {
-    if (!item.read) {
-      // Optimistic: the row should stop shouting the moment it is opened.
-      setItems((current) =>
-        current?.map((row) => (row.id === item.id ? { ...row, read: true } : row)) ?? current,
-      );
-      await notificationsApi.markRead(item.id);
-      void refreshBadge();
-    }
+  function open(item: NotificationItem) {
+    void markRead(item.id);
 
-    if (item.entity) router.push(ENTITY_ROUTE[item.entity.type](item.entity.id));
-  }
-
-  async function markAll() {
-    setItems((current) => current?.map((row) => ({ ...row, read: true })) ?? current);
-    await markAllReadInStore();
+    const href = notificationHref(item);
+    if (href) router.push(href);
   }
 
   const tabs: FilterTabItem[] = [
@@ -132,7 +79,7 @@ export default function NotificationsPage() {
         title={t.notifications.title}
         subtitle={unreadCount > 0 ? t.notifications.subtitle(unreadCount) : t.notifications.allRead}
         actions={
-          <Button variant="secondary" onClick={() => void markAll()} disabled={unreadCount === 0}>
+          <Button variant="secondary" onClick={() => void markAllRead()} disabled={unreadCount === 0}>
             <CheckCheck className="h-4 w-4" />
             {t.notifications.markAllRead}
           </Button>
@@ -168,7 +115,9 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {error ? (
+      {/* A failed refresh behind a feed we already have stays quiet — the stale list
+          is more useful than an error card wiping it away. */}
+      {error && !items ? (
         <Card>
           <ErrorState onRetry={load} />
         </Card>
@@ -264,7 +213,7 @@ function NotificationRow({
               className="text-xs tabular-nums text-slate-400"
               title={formatDateTime(item.at)}
             >
-              {withDate ? formatDateTime(item.at) : timeOf(item.at)}
+              {withDate ? formatDateTime(item.at) : formatTime(item.at)}
             </time>
             {!item.read && (
               <span className="h-2 w-2 rounded-full bg-status-green" aria-hidden />
@@ -305,15 +254,4 @@ function groupByRecency(items: NotificationItem[]): Array<{ key: GroupKey; items
   return (['today', 'yesterday', 'older'] as const)
     .map((key) => ({ key, items: buckets[key] }))
     .filter((group) => group.items.length > 0);
-}
-
-/** Latin digits and a 12-hour clock, matching every other timestamp in the console. */
-function timeOf(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
 }

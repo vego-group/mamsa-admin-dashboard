@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 import { useT } from '@/i18n';
 import { approvalsApi, setUnauthorizedHandler } from '@/lib/api';
 import { cn } from '@/lib/utils/cn';
-import { useAuthStore, useNotificationsStore, useUiStore } from '@/stores';
+import { useAuthStore, useUiStore } from '@/stores';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 
@@ -17,19 +17,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setMobileNav = useUiStore((state) => state.setMobileNav);
   const loadAdmin = useAuthStore((state) => state.load);
   const setAdmin = useAuthStore((state) => state.setAdmin);
-  const refreshUnread = useNotificationsStore((state) => state.refresh);
   const [approvalsCount, setApprovalsCount] = useState(0);
   const drawerRef = useRef<HTMLDivElement>(null);
 
+  // The unread badge is the bell's own business — it polls for itself in the header.
   useEffect(() => {
     void loadAdmin();
-    void refreshUnread();
 
     approvalsApi
       .stats()
       .then((stats) => setApprovalsCount(stats.pendingReview))
       .catch(() => setApprovalsCount(0));
-  }, [loadAdmin, refreshUnread]);
+  }, [loadAdmin]);
 
   // Any request elsewhere in the app can discover the session died (401) — react to
   // it the same way everywhere: drop the cached admin and bounce to login.
