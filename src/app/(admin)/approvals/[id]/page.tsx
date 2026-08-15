@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -8,6 +8,7 @@ import {
   BedDouble,
   Check,
   ChevronLeft,
+  ChevronRight,
   CircleCheck,
   CircleX,
   Clock,
@@ -69,6 +70,30 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
   const [done, setDone] = useState<Set<ChecklistStep>>(new Set());
   const [decision, setDecision] = useState<'approve' | 'reject' | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [advancing, setAdvancing] = useState(false);
+
+  /**
+   * A review queue is worked through, not dipped into. Landing on the next request
+   * rather than back on the list is what removes a full round trip from every single
+   * decision — the queue is SLA-ordered, so "next" is simply the one waiting longest.
+   *
+   * The decided request is excluded by id: it leaves `pending_review` server-side, but
+   * a read that races the write would otherwise hand it straight back.
+   */
+  const goToNextInQueue = useCallback(
+    async (decidedId: string) => {
+      setAdvancing(true);
+      try {
+        const queue = await approvalsApi.list({ page: 1, pageSize: 2 });
+        const next = queue.items.find((request) => request.id !== decidedId);
+        router.push(next ? `/approvals/${next.id}` : '/approvals');
+      } catch {
+        // Losing the queue is not a reason to strand the reviewer on a decided request.
+        router.push('/approvals');
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     let stale = false;
@@ -185,7 +210,8 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="space-y-4 xl:col-span-2">
-          <ImageGallery images={unit.images} alt={unit.name} />
+          {/* The one surface where "no photos" is evidence rather than a detail. */}
+          <ImageGallery images={unit.images} alt={unit.name} emptyTone="finding" />
 
           {detail.previousRejection && (
             <Card className="border-status-red/25 bg-status-redSoft/40 p-4">
@@ -353,9 +379,21 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
             {t.approvalDetail.reviewAllSections}
           </p>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" onClick={() => router.push('/approvals')}>
               {t.approvalDetail.backToList}
+            </Button>
+            {/*
+              An undecidable request — waiting on the partner, needs a second opinion —
+              must not force a decision or a trip back to the list to move past it.
+            */}
+            <Button
+              variant="secondary"
+              onClick={() => goToNextInQueue(detail.id)}
+              disabled={advancing}
+            >
+              {t.approvalDetail.skipToNext}
+              <ChevronRight className="h-4 w-4 rtl:rotate-180" aria-hidden />
             </Button>
             <Button variant="destructive" onClick={() => setDecision('reject')}>
               <X className="h-4 w-4" />
@@ -394,11 +432,11 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
         onConfirm={async () => {
           try {
             await approvalsApi.approve(detail.id);
-            router.push('/approvals');
+            await goToNextInQueue(detail.id);
           } catch (err) {
             // The unit moved out of pending_review under us — the queue is the source of truth now.
             if (err instanceof ApiError && err.code === 'CONFLICT') {
-              router.push('/approvals');
+              await goToNextInQueue(detail.id);
               return;
             }
             throw err;
@@ -431,11 +469,11 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
         onConfirm={async ({ reason, notes }) => {
           try {
             await approvalsApi.reject(detail.id, reason ?? '', notes);
-            router.push('/approvals');
+            await goToNextInQueue(detail.id);
           } catch (err) {
             // The unit moved out of pending_review under us — the queue is the source of truth now.
             if (err instanceof ApiError && err.code === 'CONFLICT') {
-              router.push('/approvals');
+              await goToNextInQueue(detail.id);
               return;
             }
             throw err;

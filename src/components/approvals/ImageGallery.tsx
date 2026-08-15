@@ -2,13 +2,23 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { ChevronLeft, ChevronRight, Images } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImageOff, Images } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils/cn';
+import { useT } from '@/i18n';
 
 export interface ImageGalleryProps {
   images: string[];
   alt: string;
+  /**
+   * How to present having no photos at all.
+   *
+   * `finding` — the reviewer is deciding whether to publish this unit, so the absence is
+   * evidence and is called that. `plain` — a browse surface, where it is just a fact
+   * about the record. Same emptiness, different consequence; and since most seeded units
+   * have no real photography, an alarm-toned state on a browse screen would be noise.
+   */
+  emptyTone?: 'finding' | 'plain';
   className?: string;
 }
 
@@ -16,10 +26,33 @@ export interface ImageGalleryProps {
  * Photos are the bulk of a listing review, so the viewer keeps the full frame and the
  * strip stays visible — an admin should never lose their place while comparing shots.
  */
-export function ImageGallery({ images, alt, className }: ImageGalleryProps) {
+export function ImageGallery({ images, alt, emptyTone = 'plain', className }: ImageGalleryProps) {
+  const t = useT();
   const [index, setIndex] = useState(0);
 
-  if (images.length === 0) return null;
+  /*
+   * A listing with no photos is not a rendering edge case — the review checklist has a
+   * "review the photos" step, and returning null here made the gallery vanish, which
+   * reads as a page that failed to load. Say it outright instead.
+   */
+  if (images.length === 0) {
+    const finding = emptyTone === 'finding';
+
+    return (
+      <Card className={cn('grid place-items-center gap-2 px-6 py-16 text-center', className)}>
+        <span
+          className={cn(
+            'grid h-12 w-12 place-items-center rounded-2xl',
+            finding ? 'bg-status-amberSoft text-status-amber' : 'bg-surface-muted text-slate-400',
+          )}
+        >
+          <ImageOff className="h-6 w-6" aria-hidden />
+        </span>
+        <p className="text-sm font-medium text-slate-700">{t.approvalDetail.noPhotos}</p>
+        {finding && <p className="text-sm text-slate-500">{t.approvalDetail.noPhotosHint}</p>}
+      </Card>
+    );
+  }
 
   const step = (delta: number) =>
     setIndex((current) => (current + delta + images.length) % images.length);

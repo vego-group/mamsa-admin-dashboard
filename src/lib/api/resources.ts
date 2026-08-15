@@ -6,6 +6,8 @@ import type {
   ApprovalListParams,
   ApprovalRequest,
   ApprovalStats,
+  ApprovalStatsRange,
+  ApprovalStatsResponse,
   BankDetails,
   Booking,
   BookingDetail,
@@ -233,14 +235,37 @@ export const unitsApi = {
       : request<Ok>(endpoints.units.create, { method: 'POST', body: draft as never }),
 };
 
+/**
+ * Collapses both stats shapes into one. A response that still carries the legacy
+ * `approvedToday`/`rejectedToday` keys, and echoes no `range`, proves the API ignored
+ * the range we asked for — so the numbers are today's and the page must say so.
+ */
+export function normalizeApprovalStats(raw: ApprovalStatsResponse): ApprovalStats {
+  const ranged = raw.range !== undefined || raw.approved !== undefined || raw.rejected !== undefined;
+
+  return {
+    pendingReview: raw.pendingReview,
+    approved: raw.approved ?? raw.approvedToday ?? 0,
+    rejected: raw.rejected ?? raw.rejectedToday ?? 0,
+    // `?? null`, never `?? 0`: a missing average is not a fast one.
+    avgReviewHours: raw.avgReviewHours ?? null,
+    // Absent means the API predates the field — distinct from a real sample of 0.
+    avgReviewSample: raw.avgReviewSample ?? null,
+    rangeSupported: ranged,
+  };
+}
+
 export const approvalsApi = {
   list: (params?: ApprovalListParams) =>
     USE_MOCK
       ? mock.mockApprovals.list(params)
       : request<Paginated<ApprovalRequest>>(endpoints.approvals.list, { params: params as never }),
 
-  stats: () =>
-    USE_MOCK ? mock.mockApprovals.stats() : request<ApprovalStats>(endpoints.approvals.stats),
+  stats: (range: ApprovalStatsRange = 'today') =>
+    (USE_MOCK
+      ? mock.mockApprovals.stats(range)
+      : request<ApprovalStatsResponse>(endpoints.approvals.stats, { params: { range } })
+    ).then(normalizeApprovalStats),
 
   get: (id: ID) =>
     USE_MOCK ? mock.mockApprovals.get(id) : request<ApprovalDetail>(endpoints.approvals.detail(id)),

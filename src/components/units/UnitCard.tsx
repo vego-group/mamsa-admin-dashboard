@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { BedDouble, MapPin, Star, Users } from 'lucide-react';
+import { BedDouble, ImageOff, MapPin, Star, Users } from 'lucide-react';
 import { StatusBadge } from '@/components/common';
 import { Card } from '@/components/ui/card';
 import { useT } from '@/i18n';
@@ -31,14 +31,26 @@ export function UnitCard({ unit, onSelect, className }: UnitCardProps) {
         className,
       )}
     >
-      <div className="relative aspect-[4/3] bg-surface-muted">
-        <Image
-          src={unit.coverImage}
-          alt={unit.name}
-          fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
-          className="object-cover"
-        />
+      <div className="relative grid aspect-[4/3] place-items-center bg-surface-muted">
+        {/*
+          Quiet on purpose. This is a browse grid, not a review — most listings currently
+          have no photography of their own, so an alarm-toned tile here would be constant
+          noise. The approvals detail page is where the same absence is called a finding.
+        */}
+        {unit.coverImage ? (
+          <Image
+            src={unit.coverImage}
+            alt={unit.name}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
+            className="object-cover"
+          />
+        ) : (
+          <span className="flex flex-col items-center gap-1.5 text-slate-400">
+            <ImageOff className="h-7 w-7" aria-hidden />
+            <span className="text-xs font-medium">{t.units.noPhoto}</span>
+          </span>
+        )}
 
         {/* One lifecycle badge only — an approved unit is published by definition. */}
         <StatusBadge status={unit.status} className="absolute end-3 top-3 bg-white/95 backdrop-blur" />

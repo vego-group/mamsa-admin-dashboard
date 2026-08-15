@@ -111,7 +111,7 @@ equivalent value inline.
 | Platform commission | **2%** (`PLATFORM_COMMISSION_RATE`) |
 | Partner share | **98%** (`PARTNER_SHARE_RATE`) |
 | Dates | Gregorian `DD/MM/YYYY`, Latin digits |
-| Review SLA | 24h warning, 48h breach |
+| Review SLA | 24h warning, 48h breach (`REVIEW_SLA_HOURS`) — continuous hours from submission, not business days |
 | Payments | Moyasar, immediate — no pending-payment approval step |
 
 `splitCommission(total)` is the only way to derive a commission figure, and it

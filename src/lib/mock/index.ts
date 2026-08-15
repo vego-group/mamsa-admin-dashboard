@@ -18,7 +18,8 @@ import type {
   ApprovalDetail,
   ApprovalListParams,
   ApprovalRequest,
-  ApprovalStats,
+  ApprovalStatsRange,
+  ApprovalStatsResponse,
   BankDetails,
   CursorPage,
   Booking,
@@ -918,6 +919,17 @@ export const mockUnits = {
 
 /* ------------------------------------------------------------- approvals */
 
+/** Inclusive lower bound of a stats range. `today` means the calendar day, not 24h. */
+function approvalRangeStart(range: ApprovalStatsRange): Date {
+  const start = new Date(BASE_NOW);
+  if (range === 'today') {
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+  start.setDate(start.getDate() - (range === '7d' ? 7 : 30));
+  return start;
+}
+
 export const mockApprovals = {
   list: (params?: ApprovalListParams): Promise<Paginated<ApprovalRequest>> => {
     let items = [...seed.approvalRequests];
@@ -933,13 +945,26 @@ export const mockApprovals = {
     return delay(paginate(items, params));
   },
 
-  stats: (): Promise<ApprovalStats> =>
-    delay({
+  /**
+   * `pendingReview` is queue depth, so it ignores the range — the other three describe
+   * decisions taken inside it.
+   */
+  stats: (range: ApprovalStatsRange = 'today'): Promise<ApprovalStatsResponse> => {
+    const decided = seed.approvalDecisions.filter(
+      (decision) => new Date(decision.at).getTime() >= approvalRangeStart(range).getTime(),
+    );
+    const reviewHours = decided.reduce((sum, decision) => sum + decision.reviewHours, 0);
+
+    return delay({
       pendingReview: seed.platformTotals.pendingApprovals,
-      approvedToday: 12,
-      rejectedToday: 3,
-      avgReviewHours: 4.2,
-    }),
+      approved: decided.filter((decision) => decision.approved).length,
+      rejected: decided.filter((decision) => !decision.approved).length,
+      // null, not 0 — an empty window has no average, and 0 would read as "instant".
+      avgReviewHours: decided.length ? Math.round((reviewHours / decided.length) * 10) / 10 : null,
+      avgReviewSample: decided.length,
+      range,
+    });
+  },
 
   get: (id: ID): Promise<ApprovalDetail> => {
     const request = seed.approvalRequests.find((r) => r.id === id);

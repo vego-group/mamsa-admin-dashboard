@@ -46,7 +46,14 @@ import type {
   User,
   UserDetail,
 } from '@/types';
-import { BASE_NOW, daysAgo, daysAhead } from './utils';
+import { BASE_NOW, daysAgo, daysAhead, seeded } from './utils';
+
+/** One resolved review, as the mock stats endpoint counts them. */
+export interface ApprovalDecision {
+  at: string;
+  approved: boolean;
+  reviewHours: number;
+}
 
 /* ------------------------------------------------------------------ admin */
 
@@ -341,7 +348,10 @@ export const units: Unit[] = unitSeeds.map((seed, index) => {
     occupancyRate: seed.occupancy,
     revenue: seed.revenue,
     bookingsCount: seed.bookings,
-    coverImage: unitImage(index),
+    // Some listings genuinely have no photography, and on the deployed data most do not.
+    // Seeding a few nulls keeps the "no photo" branches on the real path in development
+    // instead of only firing in production, which is how the last null defect survived.
+    coverImage: index % 5 === 3 ? null : unitImage(index),
     mamsaOwned: seed.mamsaOwned ?? false,
     rejectionReason: seed.rejectionReason ?? null,
     approvedAt: seed.status === UNIT_STATUS.APPROVED ? daysAgo(120) : null,
@@ -355,8 +365,12 @@ export function unitDetail(unit: Unit): UnitDetail {
     ...unit,
     description:
       'وحدة مؤثثة بالكامل بأعلى مستوى من التجهيزات، تقع في موقع مميز وقريبة من الخدمات الرئيسية.',
-    // Cover first, then four more so the gallery arrows have somewhere to go.
-    images: [unit.coverImage, ...UNIT_IMAGES.filter((image) => image !== unit.coverImage).slice(0, 4)],
+    // Cover first, then four more so the gallery arrows have somewhere to go. A unit with
+    // no cover has no photography at all — never a one-element array of a stand-in, which
+    // is what let a reviewer tick "photos reviewed" on an empty listing.
+    images: unit.coverImage
+      ? [unit.coverImage, ...UNIT_IMAGES.filter((image) => image !== unit.coverImage).slice(0, 4)]
+      : [],
     amenities: AMENITIES.slice(0, 5 + (unit.capacity % 3)),
     lat: 24.736828,
     lng: 46.654403,
@@ -388,10 +402,30 @@ export const approvalRequests: ApprovalRequest[] = pendingUnits.map((unit, index
     partnerType: partner.type,
     submittedAt: daysAgo(index, index * 9),
     requestType,
+    coverImage: unit.coverImage,
     previousRejection:
       requestType === REQUEST_TYPE.RESUBMISSION
         ? { reason: 'تصريح منتهي الصلاحية', at: daysAgo(12) }
         : null,
+  };
+});
+
+/**
+ * Decisions the review queue has already produced. The counters are derived from this
+ * dated log rather than frozen at three numbers, which is what lets the range switch
+ * actually move them — and keeps `avgReviewHours` scoped to the same window.
+ */
+const decisionRandom = seeded(4207);
+
+export const approvalDecisions: ApprovalDecision[] = Array.from({ length: 46 }, () => {
+  const daysBack = Math.floor(decisionRandom() * 30);
+  // Capped below BASE_NOW's hour so a same-day decision stays inside the same day.
+  const hoursBack = Math.floor(decisionRandom() * 9);
+
+  return {
+    at: daysAgo(daysBack, hoursBack),
+    approved: decisionRandom() > 0.22,
+    reviewHours: Math.round((2 + decisionRandom() * 26) * 10) / 10,
   };
 });
 

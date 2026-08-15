@@ -16,7 +16,9 @@ describe('mockUnits.list', () => {
 
   it('gives neighbouring cards different cover art', async () => {
     const { items } = await mockUnits.list({ pageSize: 8 });
-    const covers = items.map((unit) => unit.coverImage);
+    // Only real photography — several units genuinely have none, and counting their
+    // shared `null` as a duplicate cover would fail this for the wrong reason.
+    const covers = items.map((unit) => unit.coverImage).filter(Boolean);
 
     expect(new Set(covers).size).toBe(covers.length);
   });
@@ -46,10 +48,24 @@ describe('mockUnits.stats', () => {
 
 describe('mockUnits.get', () => {
   it('leads the gallery with the cover and offers distinct extra shots', async () => {
-    const detail = await mockUnits.get('unt_009');
+    // Picked by cover rather than by id: which seeded unit has photography is a detail of
+    // the seed, and pinning an id here makes this fail the day the seed shifts.
+    const { items } = await mockUnits.list({ pageSize: 50 });
+    const photographed = items.find((unit) => unit.coverImage !== null);
+    const detail = await mockUnits.get(photographed!.id);
 
     expect(detail.images[0]).toBe(detail.coverImage);
     expect(detail.images).toHaveLength(5);
     expect(new Set(detail.images).size).toBe(5);
+  });
+
+  it('serves no images at all for a unit with no cover — never a stand-in', async () => {
+    const { items } = await mockUnits.list({ pageSize: 50 });
+    const unphotographed = items.find((unit) => unit.coverImage === null);
+    const detail = await mockUnits.get(unphotographed!.id);
+
+    // A one-element array holding a placeholder is what let a reviewer tick "photos
+    // reviewed" on a listing that has none. Empty is the honest answer.
+    expect(detail.images).toEqual([]);
   });
 });

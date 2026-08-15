@@ -48,3 +48,63 @@ describe('mockApprovals.list', () => {
     }
   });
 });
+
+describe('mockApprovals.stats', () => {
+  it('echoes the range it answered for, so the client can trust the captions', async () => {
+    for (const range of ['today', '7d', '30d'] as const) {
+      expect((await mockApprovals.stats(range)).range).toBe(range);
+    }
+  });
+
+  it('widens the decision counts as the window widens', async () => {
+    const [today, week, month] = await Promise.all([
+      mockApprovals.stats('today'),
+      mockApprovals.stats('7d'),
+      mockApprovals.stats('30d'),
+    ]);
+
+    const decided = (stats: { approved?: number; rejected?: number }) =>
+      (stats.approved ?? 0) + (stats.rejected ?? 0);
+
+    expect(decided(today)).toBeLessThanOrEqual(decided(week));
+    expect(decided(week)).toBeLessThanOrEqual(decided(month));
+    // A switch nothing ever moves is the bug this whole range exists to avoid.
+    expect(decided(month)).toBeGreaterThan(decided(today));
+  });
+
+  it('holds queue depth outside the range — pending is now, not a window', async () => {
+    const [today, month] = await Promise.all([
+      mockApprovals.stats('today'),
+      mockApprovals.stats('30d'),
+    ]);
+
+    expect(today.pendingReview).toBe(month.pendingReview);
+  });
+
+  it('reports a measured average when the window contains decisions', async () => {
+    const month = await mockApprovals.stats('30d');
+
+    expect(month.avgReviewHours).toBeGreaterThan(0);
+  });
+
+  it('keeps the sample size consistent with the average it reports', async () => {
+    for (const range of ['today', '7d', '30d'] as const) {
+      const stats = await mockApprovals.stats(range);
+
+      // The contract runs both ways: a null average always has a sample of 0, and any
+      // sample above zero must have produced a number.
+      if (stats.avgReviewHours === null) expect(stats.avgReviewSample).toBe(0);
+      else expect(stats.avgReviewSample).toBeGreaterThan(0);
+    }
+  });
+
+  it('answers null — not zero — for a window with nothing to average', async () => {
+    // The deployed API sends null for an empty sample; a mock that sends 0 would render
+    // as "< 1h" in development and hide the case the UI must handle.
+    const empty = await mockApprovals.stats('today');
+    const decisions = empty.approved! + empty.rejected!;
+
+    if (decisions === 0) expect(empty.avgReviewHours).toBeNull();
+    else expect(empty.avgReviewHours).toBeGreaterThan(0);
+  });
+});

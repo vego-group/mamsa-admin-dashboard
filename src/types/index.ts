@@ -453,7 +453,8 @@ export interface Unit {
   occupancyRate: number;
   revenue: number;
   bookingsCount: number;
-  coverImage: string;
+  /** `null` when the unit has no photography of its own — never a stand-in image. */
+  coverImage: string | null;
   mamsaOwned: boolean;
   rejectionReason: string | null;
   approvedAt: ISODate | null;
@@ -520,6 +521,11 @@ export interface ApprovalRequest {
   submittedAt: ISODate;
   requestType: RequestType;
   previousRejection: PreviousRejection | null;
+  /**
+   * The unit's cover photo. Optional because the deployed list endpoint does not send
+   * it yet — the queue falls back to a typed placeholder rather than a broken image.
+   */
+  coverImage?: string | null;
 }
 
 export interface ApprovalDetail extends ApprovalRequest {
@@ -528,11 +534,55 @@ export interface ApprovalDetail extends ApprovalRequest {
   partnerRating: number;
 }
 
+/** The window the approval decision counters are measured over. */
+export type ApprovalStatsRange = 'today' | '7d' | '30d';
+
+/**
+ * What `/admin/approvals/stats` may put on the wire. `approvedToday`/`rejectedToday`
+ * are the legacy today-only keys the deployed API still answers with; `approved`/
+ * `rejected` + an echoed `range` are the range-aware shape. Normalised into
+ * `ApprovalStats` before any component sees it.
+ */
+export interface ApprovalStatsResponse {
+  pendingReview: number;
+  approved?: number;
+  rejected?: number;
+  approvedToday?: number;
+  rejectedToday?: number;
+  /** `null` when no decision in the range has a measurable submission time. */
+  avgReviewHours: number | null;
+  /** Decisions the average was actually computed over; `0` whenever the average is null. */
+  avgReviewSample?: number;
+  range?: ApprovalStatsRange;
+}
+
 export interface ApprovalStats {
   pendingReview: number;
-  approvedToday: number;
-  rejectedToday: number;
-  avgReviewHours: number;
+  /** Decisions taken inside the requested range. */
+  approved: number;
+  rejected: number;
+  /**
+   * Mean hours from submission to decision, or `null` for "no sample".
+   *
+   * `null` and `0` are different answers and must never collapse into each other: `0`
+   * means decisions are landing within minutes, `null` means nothing has been measured.
+   * Rendering `null` as a duration produces "< 1h" — a healthy-looking figure standing in
+   * for the absence of data, which is worse than showing nothing.
+   */
+  avgReviewHours: number | null;
+  /**
+   * How many decisions the average covers. It can be smaller than `approved + rejected`,
+   * because a decision with no recorded submission time cannot be measured — which is
+   * what makes "6 approved" and "no average" true at the same time. `null` only when the
+   * API predates the field.
+   */
+  avgReviewSample: number | null;
+  /**
+   * False when the API answered in the legacy today-only shape, i.e. it ignored the
+   * `range` we asked for. The page hides the range switch in that case rather than
+   * label today's numbers as a month's.
+   */
+  rangeSupported: boolean;
 }
 
 export interface ApprovalListParams extends ListParams {

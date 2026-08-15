@@ -153,18 +153,29 @@ export interface WaitingTime {
   severity: 'ok' | 'warn' | 'breach';
 }
 
+/**
+ * A span of hours as `3d 18h`. Every duration on the review screens reads through this,
+ * so a queue figure and a summary figure can never be written in different units.
+ */
+export function durationLabel(hours: number): string {
+  const whole = Math.max(0, Math.floor(hours));
+  if (whole < 1) return '< 1h';
+  if (whole < 24) return `${whole}h`;
+  return `${Math.floor(whole / 24)}d ${whole % 24}h`;
+}
+
+/** Grades a duration against the 24/48h review SLA. */
+export function reviewSeverity(hours: number): WaitingTime['severity'] {
+  if (hours >= REVIEW_SLA_HOURS.breach) return 'breach';
+  return hours >= REVIEW_SLA_HOURS.warn ? 'warn' : 'ok';
+}
+
 /** Hours a review request has been waiting, graded against the 24/48h SLA. */
 export function waitingTime(submittedAt: string | Date, now: Date = new Date()): WaitingTime {
   const submitted = submittedAt instanceof Date ? submittedAt : new Date(submittedAt);
   const hours = Math.max(0, Math.floor((now.getTime() - submitted.getTime()) / 3_600_000));
 
-  const severity: WaitingTime['severity'] =
-    hours >= REVIEW_SLA_HOURS.breach ? 'breach' : hours >= REVIEW_SLA_HOURS.warn ? 'warn' : 'ok';
-
-  const label =
-    hours < 1 ? '< 1h' : hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
-
-  return { hours, label, severity };
+  return { hours, label: durationLabel(hours), severity: reviewSeverity(hours) };
 }
 
 export function nightsBetween(checkIn: string | Date, checkOut: string | Date): number {

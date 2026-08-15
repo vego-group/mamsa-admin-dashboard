@@ -35,7 +35,23 @@ export const PAYOUT_MIN_BALANCE = 2000;
 export const PAYOUT_CYCLE_DAY = 1;
 export const PAYOUT_TIMEZONE = 'Asia/Riyadh';
 
-/** Unit review service level: amber at 24h, breached past 48h. */
+/**
+ * Unit review service level: amber at 24h, breached past 48h — two days.
+ *
+ * 48h is Mamsa's internal target for turning a submitted unit around; it is an operations
+ * goal, not a contractual commitment to partners.
+ *
+ * **Continuous hours, deliberately — not business days.** Saudi Arabia's weekend is
+ * Friday–Saturday, so a business-day rule would leave a Wednesday-evening submission
+ * green until Sunday. Since this target exists to expose where reviews are running late,
+ * excluding the weekend would hide the single gap most likely to justify weekend cover.
+ * A partner waiting four days is late whether or not the office was open, and on a rental
+ * platform the weekend is peak booking demand.
+ *
+ * The clock runs from **submission**, not from unit creation: a partner may draft a
+ * listing for a week before submitting it, and that week is theirs, not ours. That is why
+ * the API stamps `submitted_at` rather than measuring from `created_at`.
+ */
 export const REVIEW_SLA_HOURS = { warn: 24, breach: 48 } as const;
 
 /** Mamsa operates in Saudi Arabia only. */

@@ -24,7 +24,8 @@ export function Pagination({ page, pageSize, total, onPageChange }: PaginationPr
         {t.common.of} <span className="font-medium text-slate-700">{total}</span>
       </p>
 
-      <div className="flex items-center gap-1">
+      {/* One page needs no pager, but the count still answers "how many did I get?". */}
+      <div className={cn('flex items-center gap-1', pages <= 1 && 'hidden')}>
         <PagerButton disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label="Previous">
           <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
         </PagerButton>

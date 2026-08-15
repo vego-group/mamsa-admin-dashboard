@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CircleCheck, Home, LayoutGrid, List, Star, TrendingUp } from 'lucide-react';
 import {
   type Column,
@@ -42,17 +42,27 @@ type View = 'grid' | 'list';
 export default function UnitsPage() {
   return (
     <RequirePermission permission="units.view">
-      <UnitsPageContent />
+      <Suspense fallback={null}>
+        <UnitsPageContent />
+      </Suspense>
     </RequirePermission>
   );
 }
 
+const UNIT_STATUSES: readonly string[] = Object.values(UNIT_STATUS);
+
 function UnitsPageContent() {
   const t = useT();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [view, setView] = useState<View>('grid');
-  const [status, setStatus] = useState<UnitStatus | 'all'>('all');
+  // Seeded from ?status=<status> so the approvals counters can deep-link the units
+  // they counted — an unknown value falls back to the unfiltered list.
+  const [status, setStatus] = useState<UnitStatus | 'all'>(() => {
+    const requested = searchParams.get('status');
+    return requested && UNIT_STATUSES.includes(requested) ? (requested as UnitStatus) : 'all';
+  });
   const [type, setType] = useState<UnitType | 'all'>('all');
   const [city, setCity] = useState('all');
   const [search, setSearch] = useState('');
