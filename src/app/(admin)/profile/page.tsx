@@ -11,6 +11,7 @@ import {
   RichText,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,14 @@ import { useAuthStore, useUiStore, type Locale } from '@/stores';
 import type { AdminProfile, AdminSession, ID } from '@/types';
 
 export default function ProfilePage() {
+  return (
+    <RequirePermission permission="profile.view">
+      <ProfilePageContent />
+    </RequirePermission>
+  );
+}
+
+function ProfilePageContent() {
   const t = useT();
   const router = useRouter();
   const locale = useUiStore((state) => state.locale);
@@ -152,7 +161,7 @@ export default function ProfilePage() {
             <p className="mt-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-muted px-2.5 py-1 text-sm font-medium text-slate-700">
                 <Shield className="h-4 w-4" aria-hidden />
-                {t.profile.superAdmin}
+                {t.common.roles[profile.role]}
               </span>
               {profile.verified && <StatusBadge status="verified" dot={false} />}
             </p>

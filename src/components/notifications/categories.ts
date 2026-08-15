@@ -1,10 +1,12 @@
 import {
+  Banknote,
   Building2,
   CalendarCheck,
   CircleX,
   DollarSign,
   Settings,
   SquareCheck,
+  Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { NotificationCategory } from '@/lib/constants';
@@ -23,6 +25,8 @@ export const CATEGORY_ICON: Record<NotificationCategory, LucideIcon> = {
   partner: Building2,
   system: Settings,
   refund: DollarSign,
+  payout: Banknote,
+  wallet: Wallet,
 };
 
 export const CATEGORY_TONE: Record<NotificationCategory, string> = {
@@ -32,6 +36,8 @@ export const CATEGORY_TONE: Record<NotificationCategory, string> = {
   partner: 'bg-status-sageSoft text-status-sage',
   system: 'bg-status-greySoft text-status-grey',
   refund: 'bg-status-amberSoft text-status-amber',
+  payout: 'bg-status-blueSoft text-status-blue',
+  wallet: 'bg-status-sageSoft text-status-sage',
 };
 
 /**

@@ -34,6 +34,22 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   onUnauthorized = handler;
 }
 
+/**
+ * A denied permission is not a dead session — the admin stays signed in and is told
+ * what happened. Only 401 ever logs anyone out.
+ *
+ * Both codes are accepted: `FORBIDDEN` is what the deployed API returns today,
+ * `INSUFFICIENT_PERMISSION` is the finer-grained code the contract reserves for it.
+ */
+const PERMISSION_DENIED_CODES = ['INSUFFICIENT_PERMISSION', 'FORBIDDEN'];
+
+type ForbiddenHandler = (error: ApiError) => void;
+let onForbidden: ForbiddenHandler | null = null;
+
+export function setForbiddenHandler(handler: ForbiddenHandler | null): void {
+  onForbidden = handler;
+}
+
 export type QueryValue = string | number | boolean | null | undefined;
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -97,6 +113,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (!response.ok) {
     const error = await toApiError(response);
     if (response.status === 401) onUnauthorized?.();
+    else if (response.status === 403 && PERMISSION_DENIED_CODES.includes(error.code)) {
+      onForbidden?.(error);
+    }
     throw error;
   }
   if (response.status === 204) return undefined as T;

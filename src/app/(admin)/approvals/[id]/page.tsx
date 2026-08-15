@@ -31,6 +31,7 @@ import {
   Timeline,
   type TimelineItem,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
 import {
   CHECKLIST_STEPS,
@@ -50,6 +51,14 @@ import type { ApprovalDetail } from '@/types';
 type Tab = 'property' | 'amenities' | 'documents' | 'timeline';
 
 export default function ApprovalDetailPage({ params }: { params: { id: string } }) {
+  return (
+    <RequirePermission permission="approvals.view">
+      <ApprovalDetailPageContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
   const t = useT();
   const router = useRouter();
 

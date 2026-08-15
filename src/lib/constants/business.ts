@@ -22,6 +22,19 @@ export const OTP_MAX_ATTEMPTS = 3;
 export const PLATFORM_COMMISSION_RATE = 0.02;
 export const PARTNER_SHARE_RATE = 0.98;
 
+/**
+ * Saudi VAT. The price a guest pays is VAT-inclusive, so the commission split applies
+ * to the net base — never to the gross.
+ */
+export const VAT_RATE = 0.15;
+
+/** A partner is only payable once their available balance reaches this. */
+export const PAYOUT_MIN_BALANCE = 2000;
+
+/** Payouts run once per Gregorian calendar month; the day itself is not enforced. */
+export const PAYOUT_CYCLE_DAY = 1;
+export const PAYOUT_TIMEZONE = 'Asia/Riyadh';
+
 /** Unit review service level: amber at 24h, breached past 48h. */
 export const REVIEW_SLA_HOURS = { warn: 24, breach: 48 } as const;
 

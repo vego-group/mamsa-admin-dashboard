@@ -27,6 +27,7 @@ import {
   SearchInput,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { InviteUserDialog } from '@/components/users/InviteUserDialog';
 import { UserDetailDrawer } from '@/components/users/UserDetailDrawer';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,14 @@ type StatusFilter = User['status'] | 'all';
 type PendingAction = { kind: 'status' | 'remove'; user: User } | null;
 
 export default function UsersPage() {
+  return (
+    <RequirePermission permission="users.view">
+      <UsersPageContent />
+    </RequirePermission>
+  );
+}
+
+function UsersPageContent() {
   const t = useT();
 
   const [status, setStatus] = useState<StatusFilter>('all');

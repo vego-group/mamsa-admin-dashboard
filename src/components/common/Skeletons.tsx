@@ -41,6 +41,25 @@ export function KpiGridSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
+/**
+ * Stand-in for a whole admin screen. Used while the session resolves, so a guard
+ * never has to choose between a blank frame and a premature denial.
+ */
+export function PageSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy>
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-56" />
+        <Skeleton className="h-4 w-72" />
+      </div>
+      <KpiGridSkeleton count={3} />
+      <Card>
+        <TableSkeleton />
+      </Card>
+    </div>
+  );
+}
+
 export function ChartSkeleton({ height = 280 }: { height?: number }) {
   return (
     <Card aria-busy>

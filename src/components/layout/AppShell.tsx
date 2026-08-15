@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { X } from 'lucide-react';
+import { ShieldAlert, X } from 'lucide-react';
 import { useT } from '@/i18n';
-import { approvalsApi, setUnauthorizedHandler } from '@/lib/api';
+import { useCan } from '@/hooks/useCan';
+import { approvalsApi, setForbiddenHandler, setUnauthorizedHandler } from '@/lib/api';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore, useUiStore } from '@/stores';
 import { Header } from './Header';
@@ -15,20 +16,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const mobileNavOpen = useUiStore((state) => state.mobileNavOpen);
   const setMobileNav = useUiStore((state) => state.setMobileNav);
-  const loadAdmin = useAuthStore((state) => state.load);
   const setAdmin = useAuthStore((state) => state.setAdmin);
+  const { can } = useCan();
   const [approvalsCount, setApprovalsCount] = useState(0);
+  const [denied, setDenied] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
 
+  // RequireSession owns loading the admin; the badge is all this shell fetches.
   // The unread badge is the bell's own business — it polls for itself in the header.
+  const canSeeApprovals = can('approvals.view');
   useEffect(() => {
-    void loadAdmin();
+    if (!canSeeApprovals) {
+      setApprovalsCount(0);
+      return;
+    }
 
     approvalsApi
       .stats()
       .then((stats) => setApprovalsCount(stats.pendingReview))
       .catch(() => setApprovalsCount(0));
-  }, [loadAdmin]);
+  }, [canSeeApprovals]);
 
   // Any request elsewhere in the app can discover the session died (401) — react to
   // it the same way everywhere: drop the cached admin and bounce to login.
@@ -39,6 +46,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
     return () => setUnauthorizedHandler(null);
   }, [router, setAdmin]);
+
+  // A 403 is a denied action, not a dead session: say so and leave the admin signed in.
+  useEffect(() => {
+    setForbiddenHandler(() => setDenied(true));
+    return () => setForbiddenHandler(null);
+  }, []);
+
+  useEffect(() => {
+    if (!denied) return;
+    const timer = setTimeout(() => setDenied(false), 6000);
+    return () => clearTimeout(timer);
+  }, [denied]);
+
+  // The drawer only exists below `lg`. Crossing that line while it is open would hide
+  // it behind `display:none` and strand the scroll lock below, with no visible drawer
+  // left to close — so the breakpoint closes it.
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const close = () => {
+      if (desktop.matches) setMobileNav(false);
+    };
+
+    close();
+    desktop.addEventListener('change', close);
+    return () => desktop.removeEventListener('change', close);
+  }, [setMobileNav]);
 
   // Escape closes the drawer, and the page behind it must not scroll while it is up.
   useEffect(() => {
@@ -119,7 +152,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
-        <main className="flex-1 px-4 py-6 lg:px-6">{children}</main>
+        <main className="flex-1 px-4 py-6 lg:px-6">
+          {denied && (
+            <p
+              role="status"
+              className="mb-4 flex items-center gap-2.5 rounded-xl bg-status-redSoft px-3.5 py-3 text-sm font-medium text-status-red"
+            >
+              <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
+              {t.errors.forbidden}
+            </p>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

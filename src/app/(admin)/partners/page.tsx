@@ -18,10 +18,12 @@ import {
   SearchInput,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { AddPartnerDialog } from '@/components/partners/AddPartnerDialog';
 import { PartnerDetailDrawer } from '@/components/partners/PartnerDetailDrawer';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
+import { useCan } from '@/hooks/useCan';
 import { ApiError, partnersApi } from '@/lib/api';
 import { PARTNER_TYPE } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
@@ -37,6 +39,10 @@ type PendingAction = { kind: ActionKind; partner: Partner } | null;
 function PartnersPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
+  // Finance reads partners — the list, the drawer and the bank details — but acts on
+  // none of them. Every mutating control below is behind partners.manage.
+  const { can } = useCan();
+  const canManage = can('partners.manage');
 
   const [type, setType] = useState<TypeFilter>('all');
   const [search, setSearch] = useState('');
@@ -265,10 +271,12 @@ function PartnersPageContent() {
             <Button variant="secondary" onClick={exportCsv} disabled={!result?.items.length}>
               {t.common.export}
             </Button>
-            <Button onClick={() => setAdding(true)}>
-              <Building2 className="h-4 w-4" />
-              {t.partners.add}
-            </Button>
+            {canManage && (
+              <Button onClick={() => setAdding(true)}>
+                <Building2 className="h-4 w-4" />
+                {t.partners.add}
+              </Button>
+            )}
           </>
         }
       />
@@ -419,8 +427,10 @@ function PartnersPageContent() {
 
 export default function PartnersPage() {
   return (
-    <Suspense fallback={null}>
-      <PartnersPageContent />
-    </Suspense>
+    <RequirePermission permission="partners.view">
+      <Suspense fallback={null}>
+        <PartnersPageContent />
+      </Suspense>
+    </RequirePermission>
   );
 }

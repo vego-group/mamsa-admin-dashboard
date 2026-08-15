@@ -10,6 +10,7 @@ import {
   FilterTabs,
   PageHeader,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { CATEGORY_ICON, CATEGORY_TONE, notificationHref } from '@/components/notifications';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,6 +25,14 @@ import type { NotificationItem } from '@/types';
 type Scope = 'all' | 'unread';
 
 export default function NotificationsPage() {
+  return (
+    <RequirePermission permission="notifications.view">
+      <NotificationsPageContent />
+    </RequirePermission>
+  );
+}
+
+function NotificationsPageContent() {
   const t = useT();
   const router = useRouter();
   // The feed is shared with the header bell, so opening one item here dims it there

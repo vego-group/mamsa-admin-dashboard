@@ -16,6 +16,7 @@ import {
   SearchInput,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { BookingDetailDrawer } from '@/components/bookings/BookingDetailDrawer';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
@@ -311,8 +312,10 @@ function BookingsPageContent() {
 
 export default function BookingsPage() {
   return (
-    <Suspense fallback={null}>
-      <BookingsPageContent />
-    </Suspense>
+    <RequirePermission permission="bookings.view">
+      <Suspense fallback={null}>
+        <BookingsPageContent />
+      </Suspense>
+    </RequirePermission>
   );
 }

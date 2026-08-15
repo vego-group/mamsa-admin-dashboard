@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOOKING_STATUS, PLATFORM_COMMISSION_RATE } from '@/lib/constants';
-import { splitForUnit } from '@/lib/utils/format';
+import { splitPriceForUnit } from '@/lib/utils/format';
 import { mockBookings } from './index';
 
 describe('mockBookings.list', () => {
@@ -27,8 +27,12 @@ describe('mockBookings.list', () => {
     const { items } = await mockBookings.list({ pageSize: 50 });
 
     for (const row of items) {
-      expect(row.commission + row.partnerShare).toBe(row.total);
-      expect(row.commission).toBe(splitForUnit(row.total, row.mamsaOwned).commission);
+      // Gross = netBase + VAT, and the commission/share split lives inside netBase.
+      // The sum is rounded because adding three 2-decimal floats is not exact in binary.
+      const sum2 = (...parts: number[]) =>
+        Math.round((parts.reduce((a, b) => a + b, 0) + Number.EPSILON) * 100) / 100;
+      expect(sum2(row.commission, row.partnerShare, row.vat)).toBe(row.total);
+      expect(row.commission).toBe(splitPriceForUnit(row.total, row.mamsaOwned).commission);
     }
   });
 
@@ -37,10 +41,10 @@ describe('mockBookings.list', () => {
 
     for (const row of items) {
       if (row.mamsaOwned) {
-        expect(row.commission).toBe(row.total);
+        expect(row.commission).toBe(row.netBase);
         expect(row.partnerShare).toBe(0);
       } else {
-        expect(row.commission).toBeCloseTo(row.total * PLATFORM_COMMISSION_RATE, 1);
+        expect(row.commission).toBeCloseTo(row.netBase * PLATFORM_COMMISSION_RATE, 1);
       }
     }
   });

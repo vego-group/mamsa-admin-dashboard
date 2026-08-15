@@ -10,6 +10,7 @@ import {
   Segmented,
   StatCard,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import {
   BookingStatusChart,
   CategoryBarChart,
@@ -22,6 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
+import { cn } from '@/lib/utils/cn';
+import { useCan } from '@/hooks/useCan';
 import { reportsApi } from '@/lib/api';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatSAR } from '@/lib/utils/format';
@@ -30,10 +33,26 @@ import type { ReportRange, ReportsSummary } from '@/types';
 const TABS = ['revenue', 'bookings', 'partners', 'occupancy'] as const;
 type Tab = (typeof TABS)[number];
 
+/**
+ * The money view — revenue, commission, the split by city. Everything else on this
+ * screen describes how the platform is operating, not what it earned.
+ */
+const FINANCIAL_TABS: readonly Tab[] = ['revenue'];
+const OPERATIONAL_TABS: readonly Tab[] = ['bookings', 'partners', 'occupancy'];
+
 const RANGES: ReportRange[] = ['6m', '1y', 'all'];
 
 export default function ReportsPage() {
+  return (
+    <RequirePermission permission="reports.financial">
+      <ReportsPageContent />
+    </RequirePermission>
+  );
+}
+
+function ReportsPageContent() {
   const t = useT();
+  const { can } = useCan();
 
   const [tab, setTab] = useState<Tab>('revenue');
   const [range, setRange] = useState<ReportRange>('1y');
@@ -53,6 +72,13 @@ export default function ReportsPage() {
   const money = (value: number) => formatSAR(value, { compact: true });
   /** Millions on the axis: city revenue spans 0.3M–1.9M, so `K` would be noise. */
   const millions = (value: number) => `${(value / 1_000_000).toFixed(1)}M`;
+  /**
+   * Production still returns the pre-VAT shape, so these fields can be absent. `null`
+   * means "not reported"; it must never collapse into a zero, which would read as a
+   * factual claim that nothing was collected.
+   */
+  const optionalMoney = (value?: number) =>
+    typeof value === 'number' && Number.isFinite(value) ? money(value) : null;
 
   function exportCsv() {
     if (!summary) return;
@@ -85,11 +111,18 @@ export default function ReportsPage() {
     />
   );
 
+  // Finance holds reports.financial only, so it gets the financial section and never
+  // the operational one. A tab that is not visible can never be the active tab.
+  const visibleTabs: readonly Tab[] = can('reports.operational')
+    ? [...FINANCIAL_TABS, ...OPERATIONAL_TABS]
+    : FINANCIAL_TABS;
+  const activeTab: Tab = visibleTabs.includes(tab) ? tab : 'revenue';
+
   const controls = (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <Segmented
-        items={TABS.map((value) => ({ value, label: t.reports.tabs[value] }))}
-        value={tab}
+        items={visibleTabs.map((value) => ({ value, label: t.reports.tabs[value] }))}
+        value={activeTab}
         onChange={(value) => setTab(value as Tab)}
       />
 
@@ -147,7 +180,7 @@ export default function ReportsPage() {
       {header}
       {controls}
 
-      {tab === 'revenue' && (
+      {activeTab === 'revenue' && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
@@ -178,6 +211,54 @@ export default function ReportsPage() {
               label={t.reports.avgMonthlyRevenue}
               value={money(summary.avgMonthlyRevenue)}
             />
+          </div>
+
+          {/* The financial section proper: what was earned, what was tax, what the
+              partners are owed, and how much of it has actually left the building. */}
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Card className="p-5 xl:col-span-2">
+              <h3 className="text-base font-semibold text-slate-900">
+                {t.reports.financialSection}
+              </h3>
+              <dl className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                <FinancialRow
+                  label={t.reports.netRevenue}
+                  value={optionalMoney(summary.netRevenue)}
+                />
+                <FinancialRow
+                  label={t.reports.totalCommission}
+                  value={money(summary.totalCommission)}
+                />
+                <FinancialRow
+                  label={t.reports.partnersShare}
+                  value={optionalMoney(summary.partnersShare)}
+                />
+                <FinancialRow
+                  label={t.reports.payoutsPaid}
+                  value={optionalMoney(summary.payoutsPaid)}
+                />
+                <FinancialRow
+                  label={t.reports.payoutsPending}
+                  value={optionalMoney(summary.payoutsPending)}
+                />
+              </dl>
+            </Card>
+
+            {/* Its own tile, never a line in the revenue card and never added into a
+                total: this is money held for the authority, not money the platform
+                earned. Read straight from the API — deriving it from totalRevenue here
+                would double-count the day the backend flips to VAT-inclusive. */}
+            <Card className="flex flex-col justify-center p-5">
+              <p className="text-sm text-slate-600">{t.reports.vatCollected}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+                {optionalMoney(summary.vatCollected) ?? (
+                  <span className="text-xl font-medium text-slate-400">
+                    {t.reports.notReported}
+                  </span>
+                )}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">{t.reports.vatNotRevenue}</p>
+            </Card>
           </div>
 
           {summary.revenueSeries.length === 0 ? (
@@ -211,7 +292,7 @@ export default function ReportsPage() {
         </>
       )}
 
-      {tab === 'bookings' && (
+      {activeTab === 'bookings' && (
         summary.bookingVolume.length === 0 ? (
           <Card>
             <EmptyState title={t.reports.emptyBookings} />
@@ -228,7 +309,7 @@ export default function ReportsPage() {
         )
       )}
 
-      {tab === 'partners' && (
+      {activeTab === 'partners' && (
         summary.topPartners.length === 0 ? (
           <Card>
             <EmptyState title={t.reports.emptyPartners} />
@@ -281,7 +362,7 @@ export default function ReportsPage() {
         )
       )}
 
-      {tab === 'occupancy' && (
+      {activeTab === 'occupancy' && (
         summary.occupancySeries.length === 0 ? (
           <Card>
             <EmptyState title={t.reports.emptyOccupancy} />
@@ -298,4 +379,22 @@ export default function ReportsPage() {
 function shortPartnerName(name: string): string {
   const words = name.trim().split(/\s+/);
   return words[words.length - 1];
+}
+
+function FinancialRow({ label, value }: { label: string; value: string | null }) {
+  const t = useT();
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-hairline py-2 last:border-0">
+      <dt className="text-sm text-slate-600">{label}</dt>
+      <dd
+        className={cn(
+          'tabular-nums',
+          value ? 'font-semibold text-slate-900' : 'text-sm text-slate-400',
+        )}
+      >
+        {value ?? t.reports.notReported}
+      </dd>
+    </div>
+  );
 }

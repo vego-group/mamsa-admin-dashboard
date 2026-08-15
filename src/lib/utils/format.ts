@@ -4,6 +4,7 @@ import {
   PHONE_PREFIX,
   PLATFORM_COMMISSION_RATE,
   REVIEW_SLA_HOURS,
+  VAT_RATE,
 } from '@/lib/constants';
 
 /** Always Latin digits, grouped thousands, SAR suffix. */
@@ -93,6 +94,46 @@ export function splitForUnit(total: number, mamsaOwned: boolean): CommissionSpli
     return { total: safeTotal, commission: safeTotal, partnerShare: 0 };
   }
   return splitCommission(total);
+}
+
+export interface PriceSplit {
+  gross: number;
+  netBase: number;
+  vat: number;
+  commission: number;
+  partnerShare: number;
+}
+
+/**
+ * The full VAT-inclusive split of a booking total.
+ *
+ * The guest pays `gross`, which already contains 15% VAT. Commission is charged on the
+ * net base, never on the gross — charging it on the gross would quietly take a cut of
+ * tax that belongs to ZATCA.
+ *
+ * `partnerShare` is derived by **subtraction**, never `netBase * 0.98`. Subtraction is
+ * what makes `commission + partnerShare + vat === gross` hold exactly under rounding;
+ * multiplying twice and hoping the halves meet does not.
+ */
+export function splitPrice(gross: number): PriceSplit {
+  const safeGross = round2(gross);
+  const netBase = round2(safeGross / (1 + VAT_RATE));
+  const vat = round2(safeGross - netBase);
+  const commission = round2(netBase * PLATFORM_COMMISSION_RATE);
+  const partnerShare = round2(netBase - commission);
+
+  return { gross: safeGross, netBase, vat, commission, partnerShare };
+}
+
+/**
+ * Mamsa-owned units keep the whole net base as platform revenue. VAT is unchanged —
+ * it is the guest's tax either way, and never Mamsa's to keep.
+ */
+export function splitPriceForUnit(gross: number, mamsaOwned: boolean): PriceSplit {
+  const split = splitPrice(gross);
+  if (!mamsaOwned) return split;
+
+  return { ...split, commission: split.netBase, partnerShare: 0 };
 }
 
 export function formatPercent(value: number, fractionDigits = 1): string {

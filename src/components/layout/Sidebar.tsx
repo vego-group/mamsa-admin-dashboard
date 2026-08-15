@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useT } from '@/i18n';
+import { useCan } from '@/hooks/useCan';
+import { landingRouteFor } from '@/lib/auth/routes';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore, useNotificationsStore, useUiStore } from '@/stores';
 import { NAV_GROUPS } from './nav-items';
@@ -36,11 +38,20 @@ export function Sidebar({
   const unread = useNotificationsStore((state) => state.unreadCount);
   const admin = useAuthStore((state) => state.admin);
   const logout = useAuthStore((state) => state.logout);
+  const { can, role } = useCan();
 
   const collapsed = collapsedOverride ?? storedCollapsed;
 
   const badgeValue = (source: string | null) =>
     source === 'approvals' ? approvalsCount : source === 'notifications' ? unread : 0;
+
+  // A group whose every item is hidden leaves no empty heading behind.
+  const groups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => can(item.permission)),
+  })).filter((group) => group.items.length > 0);
+
+  const home = landingRouteFor(admin);
 
   return (
     <aside
@@ -52,7 +63,7 @@ export function Sidebar({
     >
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4">
         <Link
-          href="/overview"
+          href={home}
           onClick={onNavigate}
           className="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
         >
@@ -63,7 +74,7 @@ export function Sidebar({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold">Mamsa</span>
               <span className="block truncate text-[11px] uppercase tracking-wide text-sidebar-muted">
-                {t.common.superadmin}
+                {role ? t.common.roles[role] : ''}
               </span>
             </span>
           )}
@@ -94,7 +105,7 @@ export function Sidebar({
         aria-label={t.nav.primary}
         className="scrollbar-sidebar min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4"
       >
-        {NAV_GROUPS.map((group, groupIndex) => (
+        {groups.map((group, groupIndex) => (
           <div key={group.titleKey} className="mb-5 last:mb-0">
             {collapsed ? (
               // No room for a heading in the rail — groups are separated by a rule,

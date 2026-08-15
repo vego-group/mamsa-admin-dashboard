@@ -9,15 +9,27 @@ import {
   PARTNER_TYPE,
   PAYMENT_STATUS,
   REFUND_STATUS,
+  PAYOUT_STATUS,
+  PAYOUT_TIMEZONE,
+  type PayoutStatus,
   REQUEST_TYPE,
+  ROLE_PERMISSIONS,
   UNIT_STATUS,
   UNIT_TYPE,
 } from '@/lib/constants';
-import { nightsBetween, splitCommission, splitForUnit } from '@/lib/utils/format';
+import {
+  nightsBetween,
+  splitCommission,
+  splitForUnit,
+  splitPrice,
+  splitPriceForUnit,
+} from '@/lib/utils/format';
+import { resolveIneligibleReason } from '@/lib/wallets/eligibility';
 import type {
   AdminProfile,
   AdminSession,
   ApprovalRequest,
+  BankDetails,
   Booking,
   BookingDetail,
   Cancellation,
@@ -25,6 +37,9 @@ import type {
   Partner,
   PartnerDetail,
   PartnerDocument,
+  PartnerLedgerEntry,
+  PartnerWallet,
+  Payout,
   PolicySnapshot,
   Unit,
   UnitDetail,
@@ -41,12 +56,31 @@ export const adminProfile: AdminProfile = {
   email: 'admin@mamsa.sa',
   phone: '+966500000000',
   role: 'superadmin',
+  permissions: [...ROLE_PERMISSIONS.superadmin],
   verified: true,
   memberSince: '2023-01-15T00:00:00.000Z',
   totalReviews: 284,
   actionsToday: 12,
   preferredLocale: 'ar',
 };
+
+/** Second admin account so the role split is exercisable in mock mode. */
+export const financeAdminProfile: AdminProfile = {
+  id: 'adm_2',
+  name: 'سارة القحطاني',
+  email: 'finance@mamsa.sa',
+  phone: '+966500000002',
+  role: 'finance',
+  permissions: [...ROLE_PERMISSIONS.finance],
+  verified: true,
+  memberSince: '2024-03-04T00:00:00.000Z',
+  totalReviews: 0,
+  actionsToday: 6,
+  preferredLocale: 'ar',
+};
+
+/** Sign-in directory for the mock. Any six-digit code signs in — see mockAuth. */
+export const admins: AdminProfile[] = [adminProfile, financeAdminProfile];
 
 export const adminSessions: AdminSession[] = [
   {
@@ -145,6 +179,12 @@ const partnerSeeds: PartnerSeed[] = [
   { code: 'PTR-008', name: 'مؤسسة الواحة للإيجار', type: PARTNER_TYPE.COMPANY, city: 'Riyadh', units: 18, bookings: 489, revenue: 734000, rating: 4.4, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 9, flagged: false },
   { code: 'PTR-009', name: 'سعد عبدالكريم الجهني', type: PARTNER_TYPE.INDIVIDUAL, city: 'Madinah', units: 4, bookings: 112, revenue: 143000, rating: 3.7, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 22, flagged: true },
   { code: 'PTR-010', name: 'شركة الدرة العقارية', type: PARTNER_TYPE.COMPANY, city: 'Khobar', units: 12, bookings: 268, revenue: 402000, rating: 4.3, verified: false, status: PARTNER_STATUS.PENDING, cancellations: 2, flagged: false },
+  // PTR-011..014 exist to give the payout cycle enough payable partners to be realistic:
+  // six eligible at once, plus one already paid for the current month.
+  { code: 'PTR-011', name: 'شركة رمال الشرق', type: PARTNER_TYPE.COMPANY, city: 'Dammam', units: 9, bookings: 214, revenue: 318000, rating: 4.6, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 4, flagged: false },
+  { code: 'PTR-012', name: 'نورة سعد الدوسري', type: PARTNER_TYPE.INDIVIDUAL, city: 'Riyadh', units: 6, bookings: 176, revenue: 241000, rating: 4.7, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 3, flagged: false },
+  { code: 'PTR-013', name: 'مجموعة سدير للإسكان', type: PARTNER_TYPE.COMPANY, city: 'Riyadh', units: 15, bookings: 402, revenue: 613000, rating: 4.5, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 8, flagged: false },
+  { code: 'PTR-014', name: 'خالد يوسف الحربي', type: PARTNER_TYPE.INDIVIDUAL, city: 'Jeddah', units: 4, bookings: 121, revenue: 167000, rating: 4.4, verified: true, status: PARTNER_STATUS.ACTIVE, cancellations: 2, flagged: false },
 ];
 
 export const partners: Partner[] = partnerSeeds.map((seed, index) => ({
@@ -165,6 +205,9 @@ export const partners: Partner[] = partnerSeeds.map((seed, index) => ({
   cancellations12m: seed.cancellations,
   cancellationRate: seed.bookings ? Number(((seed.cancellations / seed.bookings) * 100).toFixed(1)) : 0,
   flagged: seed.flagged,
+  // Mirrors the backend: suspension is `users.is_active === false`, and the four-state
+  // status string is derived from it plus `partner_details.status`.
+  isActive: seed.status !== PARTNER_STATUS.SUSPENDED,
 }));
 
 function documentsFor(partner: Partner): PartnerDocument[] {
@@ -269,6 +312,11 @@ const unitSeeds: UnitSeed[] = [
   { code: 'UNT-018', name: 'شقة السلامة — جدة', partnerIndex: 1, city: 'Jeddah', district: 'Al Salamah', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.REJECTED, price: 640, bedrooms: 2, bathrooms: 1, capacity: 4, size: 105, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0, rejectionReason: 'الصور غير واضحة ولا تعكس حالة الوحدة' },
   { code: 'UNT-019', name: 'فيلا قرطبة — الرياض', partnerIndex: 5, city: 'Riyadh', district: 'Qurtubah', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 3200, bedrooms: 6, bathrooms: 5, capacity: 14, size: 700, rating: 4.8, reviews: 44, occupancy: 61, revenue: 289000, bookings: 37 },
   { code: 'UNT-020', name: 'شقة طيبة — المدينة', partnerIndex: 3, city: 'Madinah', district: 'Taibah', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.DRAFT, price: 450, bedrooms: 2, bathrooms: 1, capacity: 4, size: 90, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
+  // One unit each for PTR-011..014 so their payout history has real stays behind it.
+  { code: 'UNT-021', name: 'شاليه رمال — الدمام', partnerIndex: 10, city: 'Dammam', district: 'Corniche', type: UNIT_TYPE.CHALET, status: UNIT_STATUS.APPROVED, price: 1250, bedrooms: 3, bathrooms: 2, capacity: 8, size: 240, rating: 4.6, reviews: 51, occupancy: 68, revenue: 154000, bookings: 49 },
+  { code: 'UNT-022', name: 'شقة الياسمين — الرياض', partnerIndex: 11, city: 'Riyadh', district: 'Al Yasmin', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 720, bedrooms: 2, bathrooms: 2, capacity: 5, size: 130, rating: 4.7, reviews: 88, occupancy: 74, revenue: 132000, bookings: 63 },
+  { code: 'UNT-023', name: 'فيلا سدير — الرياض', partnerIndex: 12, city: 'Riyadh', district: 'Sudair', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 2400, bedrooms: 5, bathrooms: 4, capacity: 12, size: 520, rating: 4.5, reviews: 39, occupancy: 59, revenue: 287000, bookings: 41 },
+  { code: 'UNT-024', name: 'شقة الشاطئ — جدة', partnerIndex: 13, city: 'Jeddah', district: 'Al Shatea', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 890, bedrooms: 2, bathrooms: 2, capacity: 4, size: 115, rating: 4.4, reviews: 47, occupancy: 63, revenue: 118000, bookings: 38 },
 ];
 
 export const units: Unit[] = unitSeeds.map((seed, index) => {
@@ -418,14 +466,16 @@ const bookingSeeds: BookingSeed[] = [
   { code: 'BKG-8817', userIndex: 2, unitIndex: 4, checkInOffset: -180, nights: 3, guests: 7, status: BOOKING_STATUS.COMPLETED, paymentStatus: PAYMENT_STATUS.PAID, method: 'Credit Card', policy: CANCELLATION_POLICY.MODERATE },
 ];
 
-export const bookings: Booking[] = bookingSeeds.map((seed, index) => {
+const operationalBookings: Booking[] = bookingSeeds.map((seed, index) => {
   const user = users[seed.userIndex];
   const unit = units[seed.unitIndex];
   const partner = partners.find((p) => p.id === unit.partnerId)!;
   const checkIn = seed.checkInOffset >= 0 ? daysAhead(seed.checkInOffset) : daysAgo(-seed.checkInOffset);
   const checkOut = new Date(new Date(checkIn).getTime() + seed.nights * 86_400_000).toISOString();
   const total = unit.pricePerNight * seed.nights;
-  const { commission, partnerShare } = splitForUnit(total, unit.mamsaOwned);
+  // Commission is 2% of the net base, never of the gross — the platform cannot take a
+  // cut of VAT collected for ZATCA. See the transitional note in README.md.
+  const { netBase, vat, commission, partnerShare } = splitPriceForUnit(total, unit.mamsaOwned);
 
   return {
     id: seed.code.toLowerCase().replace('-', '_'),
@@ -443,6 +493,8 @@ export const bookings: Booking[] = bookingSeeds.map((seed, index) => {
     nights: nightsBetween(checkIn, checkOut),
     guests: seed.guests,
     total,
+    netBase,
+    vat,
     commission,
     partnerShare,
     nightlyRate: unit.pricePerNight,
@@ -456,8 +508,110 @@ export const bookings: Booking[] = bookingSeeds.map((seed, index) => {
   };
 });
 
+/**
+ * Completed stays that back the payout history. Without them the payout screens would
+ * show amounts no booking can account for — the exact thing that teaches an accountant
+ * to stop trusting the number and reconcile by hand.
+ *
+ * Generated rather than hand-written because the volume (a few stays per partner per
+ * month, across four months) is mechanical; the interesting part is that every one is a
+ * real, openable booking.
+ */
+interface HistorySpec {
+  partnerId: string;
+  unitCode: string;
+  /** Months back from BASE_NOW. 0 is the current month — those stay unpaid. */
+  monthsBack: number;
+  stays: number;
+  nights: number;
+}
+
+const HISTORY_SPECS: HistorySpec[] = [
+  ['ptr_001', 'UNT-001'],
+  ['ptr_006', 'UNT-007'],
+  ['ptr_008', 'UNT-005'],
+  ['ptr_011', 'UNT-021'],
+  ['ptr_012', 'UNT-022'],
+].flatMap(([partnerId, unitCode]) =>
+  [1, 2, 3].map((monthsBack) => ({
+    partnerId,
+    unitCode,
+    monthsBack,
+    stays: monthsBack === 2 ? 2 : 1,
+    nights: 2 + (monthsBack % 3),
+  })),
+);
+
+/** Current-month earnings — unpaid, so these are what make a partner payable today. */
+const CURRENT_SPECS: HistorySpec[] = [
+  // PTR-014 also has last month's stays, which its current-month payout settles. That
+  // combination — payable balance, but already settled for the cycle — is the only way
+  // `already_paid_this_month` can be demonstrated.
+  { partnerId: 'ptr_014', unitCode: 'UNT-024', monthsBack: 1, stays: 2, nights: 2 },
+  { partnerId: 'ptr_011', unitCode: 'UNT-021', monthsBack: 0, stays: 2, nights: 3 },
+  { partnerId: 'ptr_012', unitCode: 'UNT-022', monthsBack: 0, stays: 2, nights: 4 },
+  { partnerId: 'ptr_013', unitCode: 'UNT-023', monthsBack: 0, stays: 1, nights: 3 },
+  { partnerId: 'ptr_014', unitCode: 'UNT-024', monthsBack: 0, stays: 2, nights: 3 },
+];
+
+function monthAnchor(monthsBack: number, day: number): Date {
+  const date = new Date(BASE_NOW);
+  date.setDate(1);
+  date.setMonth(date.getMonth() - monthsBack);
+  date.setDate(day);
+  return date;
+}
+
+const historyBookings: Booking[] = [...HISTORY_SPECS, ...CURRENT_SPECS].flatMap((spec, specIndex) =>
+  Array.from({ length: spec.stays }, (_, stayIndex) => {
+    const unit = units.find((item) => item.code === spec.unitCode)!;
+    const partner = partners.find((item) => item.id === spec.partnerId)!;
+    const guest = users[(specIndex + stayIndex) % users.length];
+
+    const checkIn = monthAnchor(spec.monthsBack, 3 + stayIndex * 9);
+    const checkOut = new Date(checkIn.getTime() + spec.nights * 86_400_000);
+    const total = unit.pricePerNight * spec.nights;
+    const { netBase, vat, commission, partnerShare } = splitPriceForUnit(total, unit.mamsaOwned);
+    const code = `BKG-9${String(specIndex * 10 + stayIndex).padStart(3, '0')}`;
+
+    return {
+      id: code.toLowerCase().replace('-', '_'),
+      code,
+      guestId: guest.id,
+      guestName: guest.name,
+      guestPhone: guest.phone,
+      unitId: unit.id,
+      unitName: unit.name,
+      unitCity: unit.city,
+      partnerId: partner.id,
+      partnerName: partner.name,
+      checkIn: checkIn.toISOString(),
+      checkOut: checkOut.toISOString(),
+      nights: spec.nights,
+      guests: 2 + (stayIndex % 4),
+      total,
+      netBase,
+      vat,
+      commission,
+      partnerShare,
+      nightlyRate: unit.pricePerNight,
+      paymentMethod: stayIndex % 2 === 0 ? 'Mada' : 'Credit Card',
+      paymentStatus: PAYMENT_STATUS.PAID,
+      moyasarRef: `pay_HS${70000 + specIndex * 17 + stayIndex}Xz9`,
+      status: BOOKING_STATUS.COMPLETED,
+      createdAt: new Date(checkIn.getTime() - 6 * 86_400_000).toISOString(),
+      mamsaOwned: unit.mamsaOwned,
+    } satisfies Booking;
+  }),
+);
+
+export const bookings: Booking[] = [...operationalBookings, ...historyBookings];
+
 export function bookingDetail(booking: Booking): BookingDetail {
-  const seed = bookingSeeds.find((s) => s.code === booking.code)!;
+  // Generated history bookings have no hand-written seed row; they all froze the
+  // moderate policy, which is the platform default.
+  const seed = bookingSeeds.find((s) => s.code === booking.code);
+  const policy = seed?.policy ?? CANCELLATION_POLICY.MODERATE;
   const timeline: BookingDetail['timeline'] = [
     { id: 't1', label: 'Created', at: booking.createdAt, state: 'done' },
   ];
@@ -479,7 +633,7 @@ export function bookingDetail(booking: Booking): BookingDetail {
 
   return {
     ...booking,
-    policySnapshot: snapshotFor(seed.policy, booking.createdAt),
+    policySnapshot: snapshotFor(policy, booking.createdAt),
     timeline,
   };
 }
@@ -633,3 +787,402 @@ export const platformTotals = {
 };
 
 export const avgBookingValue = Math.round(LIFETIME_GBV / platformTotals.bookings);
+
+/* --------------------------------------------------------------- wallets */
+
+/**
+ * Wallets are DERIVED from the seeded bookings, never invented, so every figure on the
+ * wallets screen reconciles against a booking the operator can open. The ledger is built
+ * first and the balance falls out of it — that ordering is what makes
+ * `Σ ledger amounts === availableBalance` true by construction rather than by luck.
+ *
+ * **Mamsa-owned bookings produce no rows at all** — not rows of zero. A Mamsa-owned unit
+ * is stored against the admin who created it, so crediting one would accrue a phantom
+ * partner balance for that admin. `UNT-014` is Mamsa-owned and sits under PTR-001, which
+ * makes PTR-001 the case that proves the exclusion works.
+ */
+
+/** Obviously fictional, and shaped like a real Saudi IBAN: SA + 22 digits. */
+function mockIban(index: number): string {
+  return `SA${String(30 + index).padStart(2, '0')}8000000060801016${String(7519 + index).padStart(4, '0')}`;
+}
+
+/**
+ * Which partner demonstrates which ineligibility reason. Every reason in the union has a
+ * seeded partner, so no reason can silently collapse into another when the precedence in
+ * `resolveIneligibleReason` changes — the ordering bug this table exists to catch.
+ *
+ * | Partner | State | Reason |
+ * |---|---|---|
+ * | PTR-001 | active, verified bank, ≥ 2,000 | *(eligible)* |
+ * | PTR-002 | paid out in full, then refunded | `negative_balance` |
+ * | PTR-003 | pending, no bank account | `bank_missing` |
+ * | PTR-004 | active, verified bank, 0 | `below_minimum` |
+ * | PTR-005 | active, verified bank, 0 | `below_minimum` |
+ * | PTR-006 | active, verified bank, ≥ 2,000 | *(eligible)* |
+ * | PTR-007 | suspended, verified bank | `partner_suspended` |
+ * | PTR-008 | active, verified bank, ≥ 2,000 | *(eligible)* |
+ * | PTR-009 | active, unverified bank | `bank_unverified` |
+ * | PTR-010 | **pending, verified bank** | `not_approved` |
+ *
+ * PTR-010 is the `not_approved` fixture: its bank details are clean, so nothing above it
+ * in the precedence can mask it, and it is *pending* rather than suspended — the two must
+ * never report the same thing. PTR-009 is the `bank_unverified` fixture for the same
+ * reason: active, so only the bank state can be blocking it.
+ */
+const BANK_STATE: Record<string, 'missing' | 'unverified'> = {
+  ptr_003: 'missing',
+  ptr_009: 'unverified',
+};
+
+export const bankDetailsByPartner: Record<string, BankDetails | null> = Object.fromEntries(
+  partners.map((partner, index) => {
+    const state = BANK_STATE[partner.id];
+    if (state === 'missing') return [partner.id, null];
+
+    const verified = state !== 'unverified';
+    return [
+      partner.id,
+      {
+        iban: mockIban(index),
+        accountHolderName: partner.name,
+        bankName: index % 2 === 0 ? 'مصرف الراجحي' : 'البنك الأهلي السعودي',
+        verified,
+        verifiedAt: verified ? daysAgo(200 - index * 5) : null,
+        rejectionReason: null,
+        updatedAt: daysAgo(210 - index * 5),
+      } satisfies BankDetails,
+    ];
+  }),
+);
+
+/** Earning-bearing bookings: completed, and never on a Mamsa-owned unit. */
+function earningBookingsFor(partnerId: string): Booking[] {
+  return bookings
+    .filter(
+      (booking) =>
+        booking.partnerId === partnerId &&
+        booking.status === BOOKING_STATUS.COMPLETED &&
+        !booking.mamsaOwned,
+    )
+    .sort((a, b) => new Date(a.checkOut).getTime() - new Date(b.checkOut).getTime());
+}
+
+function shareOf(booking: Booking): number {
+  return splitPrice(booking.total).partnerShare;
+}
+
+/**
+ * One payout per partner per calendar month, covering exactly the stays that completed
+ * in that month. Coverage is selected by the booking's own `checkOut` month rather than
+ * by a count, so a booking can never be paid twice and every payout's lines sum to its
+ * amount — the invariant the payout drawer's reconciliation warning exists to catch.
+ *
+ * Which months are deliberately left unpaid is what makes a partner payable today.
+ */
+interface PayoutGroup {
+  partnerId: string;
+  /** The month whose stays this payout covers. */
+  monthsBack: number;
+  /** When it was recorded, if different from the month it covers. */
+  paidMonthsBack?: number;
+  status?: PayoutStatus;
+  isManual?: boolean;
+}
+
+const PAYOUT_GROUPS: PayoutGroup[] = [
+  // Months 2–3 settled; month 1 and the current stay are what keep them payable.
+  { partnerId: 'ptr_001', monthsBack: 2 },
+  { partnerId: 'ptr_001', monthsBack: 3 },
+  // Month 3 was recorded off-cycle by a superadmin.
+  { partnerId: 'ptr_006', monthsBack: 2 },
+  { partnerId: 'ptr_006', monthsBack: 3, isManual: true },
+  { partnerId: 'ptr_008', monthsBack: 1 },
+  { partnerId: 'ptr_008', monthsBack: 2 },
+  { partnerId: 'ptr_008', monthsBack: 3 },
+  { partnerId: 'ptr_011', monthsBack: 1 },
+  { partnerId: 'ptr_011', monthsBack: 2 },
+  { partnerId: 'ptr_011', monthsBack: 3 },
+  { partnerId: 'ptr_012', monthsBack: 1 },
+  { partnerId: 'ptr_012', monthsBack: 2 },
+  // The transfer bounced and was unwound — its compensating row is written below.
+  { partnerId: 'ptr_012', monthsBack: 3, status: PAYOUT_STATUS.REVERSED },
+  // Paid out in full, then a guest refund clawed money back → negative balance.
+  { partnerId: 'ptr_002', monthsBack: 2 },
+  // Recorded THIS month, so this partner is payable but already settled for the cycle.
+  { partnerId: 'ptr_014', monthsBack: 1, paidMonthsBack: 0 },
+];
+
+function periodOf(monthsBack: number): string {
+  return riyadhPeriodMonth(monthAnchor(monthsBack, 15).toISOString());
+}
+
+function bookingsCompletedIn(partnerId: string, monthsBack: number): Booking[] {
+  const period = periodOf(monthsBack);
+  return earningBookingsFor(partnerId).filter(
+    (booking) => riyadhPeriodMonth(booking.checkOut) === period,
+  );
+}
+
+/** payoutId → the bookings it settled, so PayoutDetail can show lines that add up. */
+export const payoutCoverage: Record<string, Booking[]> = {};
+
+export const payouts: Payout[] = PAYOUT_GROUPS.flatMap((group, index) => {
+  const partner = partners.find((p) => p.id === group.partnerId)!;
+  const covered = bookingsCompletedIn(group.partnerId, group.monthsBack);
+  if (covered.length === 0) return [];
+
+  const amount = round2(covered.reduce((sum, booking) => sum + shareOf(booking), 0));
+  const bank = bankDetailsByPartner[partner.id];
+  const paidAt = monthAnchor(group.paidMonthsBack ?? group.monthsBack, 26).toISOString();
+  const status = group.status ?? PAYOUT_STATUS.PAID;
+  const reversed = status === PAYOUT_STATUS.REVERSED;
+  const id = `pay_${String(index + 1).padStart(3, '0')}`;
+
+  payoutCoverage[id] = covered;
+
+  return [
+    {
+      id,
+      reference: `PYT-${periodOf(group.monthsBack).replace('-', '')}-${String(index + 1).padStart(3, '0')}`,
+      partnerId: partner.id,
+      partnerName: partner.name,
+      partnerType: partner.type,
+      periodMonth: riyadhPeriodMonth(paidAt),
+      amount,
+      bookingsCount: covered.length,
+      currency: 'SAR',
+      iban: bank?.iban ?? '',
+      bankName: bank?.bankName ?? null,
+      accountHolderName: bank?.accountHolderName ?? partner.name,
+      status,
+      paidAt,
+      recordedByAdminId: group.isManual ? adminProfile.id : financeAdminProfile.id,
+      recordedByAdminName: group.isManual ? adminProfile.name : financeAdminProfile.name,
+      bankReference: `FT${24500 + index * 137}SA`,
+      note: group.isManual ? 'دفعة استثنائية خارج الدورة الشهرية' : null,
+      reversedAt: reversed ? monthAnchor(group.monthsBack, 28).toISOString() : null,
+      reversedByAdminId: reversed ? adminProfile.id : null,
+      reversalReason: reversed ? 'ارتد التحويل من البنك لعدم تطابق اسم صاحب الحساب' : null,
+      notifiedAt: paidAt,
+      isManual: group.isManual ?? false,
+    } satisfies Payout,
+  ];
+});
+
+/**
+ * Clawbacks: a guest refund on a booking whose share was already credited. PTR-002 was
+ * paid out in full and then refunded, which is exactly how a real negative balance
+ * arises — and the only way to render the negative path honestly.
+ */
+const REVERSAL_SEEDS: Array<{ bookingCode: string; refundPercent: number; daysBack: number }> = [
+  { bookingCode: 'BKG-8830', refundPercent: 50, daysBack: 40 },
+];
+
+const ADJUSTMENT_SEEDS: Array<{
+  partnerId: string;
+  amount: number;
+  description: string;
+  daysBack: number;
+}> = [
+  {
+    partnerId: 'ptr_008',
+    amount: 150,
+    description: 'تسوية يدوية لفرق تقريب في حجز سابق',
+    daysBack: 20,
+  },
+];
+
+interface LedgerEvent {
+  partnerId: string;
+  type: PartnerLedgerEntry['type'];
+  amount: number;
+  refType: PartnerLedgerEntry['refType'];
+  refId: string;
+  refCode: string;
+  description: string;
+  createdAt: string;
+  createdByAdminId: string | null;
+}
+
+function ledgerEvents(): LedgerEvent[] {
+  const events: LedgerEvent[] = [];
+
+  for (const partner of partners) {
+    for (const booking of earningBookingsFor(partner.id)) {
+      events.push({
+        partnerId: partner.id,
+        type: 'earning',
+        amount: shareOf(booking),
+        refType: 'booking',
+        refId: booking.id,
+        refCode: booking.code,
+        description: `حصة الشريك من حجز ${booking.code}`,
+        createdAt: booking.checkOut,
+        createdByAdminId: null,
+      });
+    }
+  }
+
+  for (const payout of payouts) {
+    events.push({
+      partnerId: payout.partnerId,
+      type: 'payout',
+      amount: -payout.amount,
+      refType: 'payout',
+      refId: payout.id,
+      refCode: payout.reference,
+      description: `حوالة صادرة ${payout.reference}`,
+      createdAt: payout.paidAt,
+      createdByAdminId: payout.recordedByAdminId,
+    });
+
+    // A reversal never edits or deletes the original debit — it writes a compensating
+    // credit beside it, so the history of what happened stays readable.
+    if (payout.status === PAYOUT_STATUS.REVERSED && payout.reversedAt) {
+      events.push({
+        partnerId: payout.partnerId,
+        type: 'adjustment',
+        amount: payout.amount,
+        refType: 'payout',
+        refId: payout.id,
+        refCode: payout.reference,
+        description: `عكس الحوالة ${payout.reference}`,
+        createdAt: payout.reversedAt,
+        createdByAdminId: payout.reversedByAdminId,
+      });
+    }
+  }
+
+  for (const seed of REVERSAL_SEEDS) {
+    const booking = bookings.find((b) => b.code === seed.bookingCode)!;
+    events.push({
+      partnerId: booking.partnerId,
+      type: 'refund_reversal',
+      amount: -round2(shareOf(booking) * (seed.refundPercent / 100)),
+      refType: 'booking',
+      refId: booking.id,
+      refCode: booking.code,
+      description: `استرجاع حصة الشريك بعد استرداد ${seed.refundPercent}% من حجز ${booking.code}`,
+      createdAt: daysAgo(seed.daysBack),
+      createdByAdminId: null,
+    });
+  }
+
+  for (const seed of ADJUSTMENT_SEEDS) {
+    events.push({
+      partnerId: seed.partnerId,
+      type: 'adjustment',
+      amount: seed.amount,
+      refType: 'manual',
+      refId: `adj_${seed.partnerId}`,
+      refCode: 'ADJ-0001',
+      description: seed.description,
+      createdAt: daysAgo(seed.daysBack),
+      createdByAdminId: adminProfile.id,
+    });
+  }
+
+  return events;
+}
+
+/** Chronological per partner, with a running `balanceAfter` on every row. */
+export const partnerLedgers: Record<string, PartnerLedgerEntry[]> = (() => {
+  const byPartner: Record<string, PartnerLedgerEntry[]> = {};
+
+  for (const partner of partners) {
+    const events = ledgerEvents()
+      .filter((event) => event.partnerId === partner.id)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    let running = 0;
+    byPartner[partner.id] = events.map((event, index) => {
+      running = round2(running + event.amount);
+      return {
+        id: `led_${partner.id}_${String(index + 1).padStart(3, '0')}`,
+        partnerId: partner.id,
+        type: event.type,
+        amount: event.amount,
+        balanceAfter: running,
+        refType: event.refType,
+        refId: event.refId,
+        refCode: event.refCode,
+        description: event.description,
+        createdAt: event.createdAt,
+        createdByAdminId: event.createdByAdminId,
+      } satisfies PartnerLedgerEntry;
+    });
+  }
+
+  return byPartner;
+})();
+
+export const wallets: PartnerWallet[] = partners.map((partner) => {
+  const ledger = partnerLedgers[partner.id];
+  const availableBalance = ledger.length ? ledger[ledger.length - 1].balanceAfter : 0;
+
+  const lifetimeEarnings = round2(
+    ledger.filter((row) => row.type === 'earning').reduce((sum, row) => sum + row.amount, 0),
+  );
+  // A reversed payout is money that came back, so it does not count as paid out. Its
+  // compensating credit carries refType 'payout', which is what nets it off here.
+  const reversedBack = round2(
+    ledger
+      .filter((row) => row.type === 'adjustment' && row.refType === 'payout')
+      .reduce((sum, row) => sum + row.amount, 0),
+  );
+  const lifetimePaidOut = round2(
+    ledger
+      .filter((row) => row.type === 'payout')
+      .reduce((sum, row) => sum + Math.abs(row.amount), 0) - reversedBack,
+  );
+
+  const pendingBalance = round2(
+    bookings
+      .filter(
+        (booking) =>
+          booking.partnerId === partner.id &&
+          !booking.mamsaOwned &&
+          (booking.status === BOOKING_STATUS.PENDING_PAYMENT ||
+            booking.status === BOOKING_STATUS.CONFIRMED),
+      )
+      .reduce((sum, booking) => sum + shareOf(booking), 0),
+  );
+
+  const bankDetails = bankDetailsByPartner[partner.id];
+  const ineligibleReason = resolveIneligibleReason({ partner, availableBalance, bankDetails });
+  const lastPayout = payouts.filter((p) => p.partnerId === partner.id).at(-1) ?? null;
+
+  return {
+    partnerId: partner.id,
+    partnerName: partner.name,
+    partnerType: partner.type,
+    availableBalance,
+    pendingBalance,
+    lifetimeEarnings,
+    lifetimePaidOut,
+    currency: 'SAR',
+    bankVerified: bankDetails?.verified ?? false,
+    payoutEligible: ineligibleReason === null,
+    ineligibleReason,
+    lastPayoutAt: lastPayout?.paidAt ?? null,
+    updatedAt: daysAgo(0),
+  } satisfies PartnerWallet;
+});
+
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** 'YYYY-MM' in Riyadh time — payout periods are Gregorian calendar months there. */
+export function riyadhPeriodMonth(iso: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: PAYOUT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date(iso));
+
+  const year = parts.find((part) => part.type === 'year')!.value;
+  const month = parts.find((part) => part.type === 'month')!.value;
+  return `${year}-${month}`;
+}

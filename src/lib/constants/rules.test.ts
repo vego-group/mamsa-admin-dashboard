@@ -12,11 +12,14 @@ import {
   BOOKING_STATUS,
   OTP_LENGTH,
   PARTNER_SHARE_RATE,
+  PAYOUT_MIN_BALANCE,
+  PAYOUT_STATUS,
   PLATFORM_COMMISSION_RATE,
   REFUND_STATUS,
   UNIT_STATUS,
+  VAT_RATE,
 } from '@/lib/constants';
-import { splitCommission, splitForUnit } from '@/lib/utils/format';
+import { splitCommission, splitForUnit, splitPrice, splitPriceForUnit } from '@/lib/utils/format';
 import { bookings, POLICY_PRESETS } from '@/lib/mock/seed';
 
 describe('commission — 2%, never 10%', () => {
@@ -36,26 +39,93 @@ describe('commission — 2%, never 10%', () => {
     expect(split.partnerShare).toBe(0);
   });
 
-  it('sums commission + partnerShare back to total exactly for every seeded booking', () => {
+  /**
+   * CHANGED DELIBERATELY — src/lib/constants/rules.test.ts, 2026-08-13, owner-approved.
+   *
+   * This used to assert `commission + partnerShare === total`. That predates VAT
+   * separation and is now mathematically impossible: `total` is VAT-inclusive and
+   * decomposes into `netBase + vat`, so commission and partnerShare sum to `netBase`,
+   * never to `total`. The identity below is the same rule stated correctly — do not
+   * "restore" the two-way version.
+   */
+  it('sums commission + partnerShare + VAT back to the gross for every seeded booking', () => {
     expect(bookings.length).toBeGreaterThan(0);
+
+    // Each part is exact to the halala; only their *addition* is not representable in
+    // binary (0.58 + 28.4 → 28.979999999999997). Rounding the sum compares money at the
+    // precision money has — it does not weaken the identity.
+    const sum2 = (...parts: number[]) =>
+      Math.round((parts.reduce((a, b) => a + b, 0) + Number.EPSILON) * 100) / 100;
+
     for (const booking of bookings) {
-      expect(booking.commission + booking.partnerShare).toBe(booking.total);
+      expect(sum2(booking.commission, booking.partnerShare, booking.vat)).toBe(booking.total);
+      expect(sum2(booking.netBase, booking.vat)).toBe(booking.total);
+      expect(sum2(booking.commission, booking.partnerShare)).toBe(booking.netBase);
     }
   });
 
-  it('keeps every seeded booking on the locked rate', () => {
+  it('keeps every seeded booking on the locked rate, charged on the net base', () => {
     for (const booking of bookings) {
       if (booking.mamsaOwned) {
-        // No partner split: the platform keeps the full amount.
-        expect(booking.commission).toBe(booking.total);
+        // No partner split: the platform keeps the whole base. VAT is still not revenue.
+        expect(booking.commission).toBe(booking.netBase);
         expect(booking.partnerShare).toBe(0);
       } else {
-        // Within a cent of 2% — rounding is the only tolerated deviation.
+        // 2% of netBase, never of the gross — VAT is collected for ZATCA, not earned.
         expect(
-          Math.abs(booking.commission - booking.total * PLATFORM_COMMISSION_RATE),
+          Math.abs(booking.commission - booking.netBase * PLATFORM_COMMISSION_RATE),
         ).toBeLessThanOrEqual(0.01);
       }
     }
+  });
+});
+
+describe('VAT — 15%, and the guest price already contains it', () => {
+  /**
+   * The invariant that matters. It holds only because `partnerShare` is derived by
+   * SUBTRACTION; computing it as `netBase * 0.98` lets the halves miss each other by a
+   * halala at exactly the values a real booking produces.
+   */
+  const GROSS_VALUES = [
+    0.01, 1, 33.33, 100, 999.99, 1000, 1234.56, 2550, 4310.75, 7777.77, 16000, 100000,
+  ];
+
+  it('locks the rate and the payout floor', () => {
+    expect(VAT_RATE).toBe(0.15);
+    expect(PAYOUT_MIN_BALANCE).toBe(2000);
+  });
+
+  it('splits every gross value back to itself exactly', () => {
+    expect(GROSS_VALUES.length).toBeGreaterThanOrEqual(12);
+
+    // The locked rule is the three-way sum; it holds exactly. The two decomposition
+    // checks below are rounded because adding two 2-decimal floats can land a machine
+    // epsilon off (0.58 + 28.4 → 28.979999999999997) — an artifact of binary floats,
+    // not of the split.
+    const sum2 = (...parts: number[]) =>
+      Math.round((parts.reduce((a, b) => a + b, 0) + Number.EPSILON) * 100) / 100;
+
+    for (const gross of GROSS_VALUES) {
+      const { netBase, vat, commission, partnerShare } = splitPrice(gross);
+
+      expect(commission + partnerShare + vat).toBe(gross);
+      expect(sum2(commission, partnerShare)).toBe(netBase);
+      expect(sum2(netBase, vat)).toBe(gross);
+    }
+  });
+
+  it('charges commission on the net base, never on the gross', () => {
+    const { netBase, commission } = splitPrice(1150);
+    expect(netBase).toBe(1000);
+    expect(commission).toBe(20);
+  });
+
+  it('gives a Mamsa-owned unit the whole net base and the partner nothing', () => {
+    const split = splitPriceForUnit(1000, true);
+    expect(split.partnerShare).toBe(0);
+    expect(split.commission).toBe(split.netBase);
+    // VAT is the guest's tax either way — never Mamsa's to keep.
+    expect(split.vat).toBe(splitPrice(1000).vat);
   });
 });
 
@@ -73,6 +143,17 @@ describe('status vocabularies', () => {
     expect(values).toHaveLength(4);
     expect(values).not.toContain('published');
     expect(values.sort()).toEqual(['approved', 'draft', 'pending_review', 'rejected']);
+  });
+
+  /**
+   * A payout is recorded after the transfer already happened, so it is created `paid`.
+   * There is no pending state, and a bounced transfer is `reversed` — a distinct
+   * accounting event, not a failed attempt. Adding a third value fails here first.
+   */
+  it('payouts have exactly two states', () => {
+    expect(Object.values(PAYOUT_STATUS)).toEqual(['paid', 'reversed']);
+    expect(Object.values(PAYOUT_STATUS)).not.toContain('pending');
+    expect(Object.values(PAYOUT_STATUS)).not.toContain('failed');
   });
 
   it('refunds know failed but never pending', () => {

@@ -1,5 +1,10 @@
+import { RequireSession } from '@/components/auth';
 import { AppShell } from '@/components/layout';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <RequireSession>
+      <AppShell>{children}</AppShell>
+    </RequireSession>
+  );
 }

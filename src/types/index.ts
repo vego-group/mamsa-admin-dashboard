@@ -7,6 +7,7 @@ import type {
   NotificationCategory,
   PartnerStatus,
   PartnerType,
+  PayoutStatus,
   PaymentStatus,
   RefundStatus,
   RequestType,
@@ -35,12 +36,44 @@ export interface ListParams {
 
 /* ---------------------------------------------------------------- admin */
 
+export type AdminRole = 'superadmin' | 'finance';
+
+/**
+ * A capability, never a role. Components ask "can this admin do X?" so that adding
+ * a role is a change to ROLE_PERMISSIONS alone and never a change to a component.
+ */
+export type Permission =
+  | 'dashboard.view'
+  | 'users.view'
+  | 'users.manage'
+  | 'partners.view'
+  | 'partners.manage'
+  | 'units.view'
+  | 'units.manage'
+  | 'approvals.view'
+  | 'approvals.manage'
+  | 'bookings.view'
+  | 'cancellations.view'
+  | 'cancellations.manage'
+  | 'wallets.view'
+  | 'wallets.adjust'
+  | 'payouts.view'
+  | 'payouts.execute'
+  | 'payouts.reverse'
+  | 'payouts.manage'
+  | 'reports.financial'
+  | 'reports.operational'
+  | 'notifications.view'
+  | 'profile.view';
+
 export interface AdminProfile {
   id: ID;
   name: string;
   email: string;
   phone: string;
-  role: 'superadmin';
+  role: AdminRole;
+  /** Authoritative grant list. Resolved from ROLE_PERMISSIONS when the API omits it. */
+  permissions: Permission[];
   verified: boolean;
   memberSince: ISODate;
   totalReviews: number;
@@ -130,7 +163,13 @@ export interface Partner {
   revenue: number;
   rating: number;
   verified: boolean;
+  /** Server-derived from `partner_details.status` + `users.is_active`. */
   status: PartnerStatus;
+  /**
+   * The account-level flag behind the derived status. Suspension is `isActive === false`,
+   * not a status value — payout eligibility must check both. See `canReceivePayouts`.
+   */
+  isActive: boolean;
   cancellations12m: number;
   cancellationRate: number;
   flagged: boolean;
@@ -164,6 +203,232 @@ export interface PartnerStats {
   /** Partners flagged for a cancellation rate the platform will not absorb. */
   highRisk: number;
   totalRevenue: number;
+}
+
+/* --------------------------------------------------------------- wallets */
+
+export type PartnerLedgerEntryType = 'earning' | 'payout' | 'refund_reversal' | 'adjustment';
+
+export type WalletIneligibleReason =
+  | 'below_minimum'
+  | 'bank_unverified'
+  | 'bank_missing'
+  | 'not_approved'
+  | 'partner_suspended'
+  | 'negative_balance'
+  /**
+   * A payout-cycle fact, not a wallet fact: the partner is otherwise payable but has
+   * already been paid for the current Riyadh month. It is never stored on
+   * `PartnerWallet.ineligibleReason` — only `listIneligiblePartners` computes it.
+   */
+  | 'already_paid_this_month';
+
+export interface BankDetails {
+  iban: string;
+  accountHolderName: string;
+  bankName: string | null;
+  verified: boolean;
+  verifiedAt: ISODate | null;
+  rejectionReason: string | null;
+  updatedAt: ISODate | null;
+}
+
+export interface PartnerWallet {
+  partnerId: ID;
+  partnerName: string;
+  partnerType: PartnerType;
+  availableBalance: number;
+  pendingBalance: number;
+  lifetimeEarnings: number;
+  lifetimePaidOut: number;
+  currency: 'SAR';
+  bankVerified: boolean;
+  payoutEligible: boolean;
+  ineligibleReason: WalletIneligibleReason | null;
+  lastPayoutAt: ISODate | null;
+  updatedAt: ISODate;
+}
+
+/**
+ * One row of a partner's money history. `amount` is signed: credits positive, debits
+ * negative, so the ledger sums to the balance and never needs a separate direction flag.
+ */
+export interface PartnerLedgerEntry {
+  id: ID;
+  partnerId: ID;
+  type: PartnerLedgerEntryType;
+  amount: number;
+  balanceAfter: number;
+  refType: 'booking' | 'payout' | 'manual';
+  refId: ID;
+  refCode: string;
+  description: string;
+  createdAt: ISODate;
+  createdByAdminId: ID | null;
+}
+
+export interface PartnerWalletDetail extends PartnerWallet {
+  bankDetails: BankDetails | null;
+  /**
+   * `recentLedger`, not `recentTransactions` — verified against the deployed staging
+   * stub. The prompt's name predates the WalletTransaction → PartnerLedgerEntry rename.
+   */
+  recentLedger: PartnerLedgerEntry[];
+  recentPayouts: Payout[];
+}
+
+export interface WalletStats {
+  totalAvailable: number;
+  totalPending: number;
+  eligibleCount: number;
+  eligibleAmount: number;
+  belowMinimumCount: number;
+  bankUnverifiedCount: number;
+  bankMissingCount: number;
+  negativeBalanceCount: number;
+}
+
+export type WalletEligibilityFilter = 'eligible' | 'ineligible' | 'all';
+
+export interface WalletListParams extends ListParams {
+  q?: string;
+  type?: PartnerType | 'all';
+  eligibility?: WalletEligibilityFilter;
+  minBalance?: number;
+  maxBalance?: number;
+  sort?: string;
+}
+
+/**
+ * The ledger is cursor-paginated, not page/pageSize like every list endpoint — verified
+ * against the staging stub, which returns `{ items, hasMore, nextCursor }` and takes
+ * `?limit=&before=`. A ledger only ever grows at the head, so a page number would drift
+ * under the reader as new rows land.
+ */
+export interface CursorPage<T> {
+  items: T[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+export interface LedgerListParams {
+  limit?: number;
+  /** The previous response's `nextCursor`. */
+  before?: string;
+  type?: PartnerLedgerEntryType | 'all';
+  from?: ISODate;
+  to?: ISODate;
+}
+
+/* --------------------------------------------------------------- payouts */
+
+/**
+ * Declared here because `PartnerWalletDetail.recentPayouts` needs it. The payout
+ * screens, endpoints and mutation rules belong to Phase 3.
+ */
+export interface Payout {
+  id: ID;
+  reference: string;
+  partnerId: ID;
+  partnerName: string;
+  partnerType: PartnerType;
+  /** 'YYYY-MM', derived from paidAt in Riyadh time. */
+  periodMonth: string;
+  amount: number;
+  bookingsCount: number;
+  currency: 'SAR';
+  iban: string;
+  bankName: string | null;
+  accountHolderName: string;
+  status: PayoutStatus;
+  paidAt: ISODate;
+  recordedByAdminId: ID;
+  recordedByAdminName: string;
+  bankReference: string;
+  note: string | null;
+  reversedAt: ISODate | null;
+  reversedByAdminId: ID | null;
+  reversalReason: string | null;
+  notifiedAt: ISODate | null;
+  /** True for off-cycle payouts recorded by a superadmin. */
+  isManual: boolean;
+}
+
+export interface EligiblePartner {
+  partnerId: ID;
+  partnerName: string;
+  partnerType: PartnerType;
+  /** Server-computed. Display only — the client never sends this back. */
+  amount: number;
+  bookingsCount: number;
+  iban: string;
+  bankName: string | null;
+  accountHolderName: string;
+  lastPaidAt: ISODate | null;
+  lastPaidPeriod: string | null;
+}
+
+export interface IneligiblePartner {
+  partnerId: ID;
+  partnerName: string;
+  partnerType: PartnerType;
+  availableBalance: number;
+  reason: WalletIneligibleReason;
+  /** `below_minimum` only — how far short of the floor they are. */
+  shortfall: number | null;
+  paidThisMonthReference: string | null;
+}
+
+export interface PayoutBookingLine {
+  bookingId: ID;
+  bookingCode: string;
+  unitName: string;
+  checkOut: ISODate;
+  gross: number;
+  netBase: number;
+  commission: number;
+  partnerShare: number;
+}
+
+export interface PayoutTimelineEvent {
+  at: ISODate;
+  event: 'recorded' | 'notified' | 'notification_failed' | 'reversed';
+  actor: string;
+  detail: string | null;
+}
+
+export interface PayoutDetail extends Payout {
+  bookings: PayoutBookingLine[];
+  timeline: PayoutTimelineEvent[];
+}
+
+export interface PayoutStats {
+  eligibleCount: number;
+  eligibleAmount: number;
+  paidThisMonthCount: number;
+  paidThisMonthAmount: number;
+  ineligibleCount: number;
+  reversedCount: number;
+  lifetimePaidAmount: number;
+  /** 'YYYY-MM' in Riyadh time. */
+  currentPeriodMonth: string;
+}
+
+export interface PayoutListParams extends ListParams {
+  q?: string;
+  status?: PayoutStatus | 'all';
+  periodMonth?: string;
+  partnerId?: ID;
+  from?: ISODate;
+  to?: ISODate;
+  sort?: string;
+}
+
+export interface RecordPayoutInput {
+  partnerId: ID;
+  bankReference: string;
+  paidAt?: ISODate;
+  note?: string;
 }
 
 /* ----------------------------------------------------------------- units */
@@ -312,6 +577,17 @@ export interface Booking {
   nights: number;
   guests: number;
   total: number;
+  /**
+   * `total` is VAT-inclusive and decomposes into `netBase` + `vat`.
+   *
+   * `commission` and `partnerShare` are **netBase-based** here and after the backend's
+   * VAT refactor: commission is 2% of `netBase`, and the three parts sum to `total`.
+   * On the **live API today** they are still gross-based (2%/98% of `total`, per
+   * BACKEND_SPEC §5.8), which the backend's phase 2 replaces. Mock mode represents the
+   * target state; expect the two to disagree until that ships.
+   */
+  netBase: number;
+  vat: number;
   commission: number;
   partnerShare: number;
   nightlyRate: number;
@@ -419,6 +695,13 @@ export interface StatusSlice {
 export interface DashboardSummary {
   totalUsers: number;
   platformCommission: number;
+  /**
+   * VAT collected on behalf of ZATCA. Reported separately and never folded into a
+   * revenue figure — it was never the platform's money.
+   */
+  totalVat: number;
+  /** Gross takings less VAT. This is the number the revenue KPIs show. */
+  netRevenue: number;
   totalBookings: number;
   activePartners: number;
   pendingRequests: number;
@@ -441,6 +724,28 @@ export interface DashboardSummary {
 export interface ReportsSummary {
   totalRevenue: number;
   totalCommission: number;
+  /**
+   * Financial block — **optional on purpose**. Production still returns the old shape
+   * until the coordinated cutover, so any of these can be absent at runtime and the UI
+   * must render an empty state rather than a zero. A zero here reads as "no VAT was
+   * collected", which is a different and much worse claim than "not reported yet".
+   *
+   * `netRevenue` and `vatCollected` ship from `/admin/reports/summary` (staging first);
+   * the backend derives both as `total − taxes`, so the names and the
+   * `netRevenue + vatCollected === totalRevenue` invariant survive the VAT-inclusive
+   * flip with no rewiring here.
+   *
+   * The partner dashboard calls its equivalent field `vat`. Deliberately NOT normalised
+   * — each surface follows its own contract section.
+   *
+   * `partnersShare` / `payoutsPaid` / `payoutsPending` are mock-only so far; no backend
+   * ships them yet.
+   */
+  netRevenue?: number;
+  vatCollected?: number;
+  partnersShare?: number;
+  payoutsPaid?: number;
+  payoutsPending?: number;
   totalBookings: number;
   avgMonthlyRevenue: number;
   revenueSeries: DualSeriesPoint[];

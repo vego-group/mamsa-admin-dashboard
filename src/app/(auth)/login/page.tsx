@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LtrText } from '@/components/common';
 import { useT } from '@/i18n';
 import { ApiError, authApi } from '@/lib/api';
+import { postLoginRoute } from '@/lib/auth/routes';
 import { OTP_LENGTH, OTP_RESEND_SECONDS, PHONE_PREFIX } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatPhone } from '@/lib/utils/format';
@@ -64,7 +65,10 @@ export default function LoginPage() {
     try {
       const result = await authApi.verifyOtp(`${PHONE_PREFIX}${phone}`, value);
       setAdmin(result.admin);
-      router.push('/overview');
+      // Read the query here rather than with useSearchParams: the hook would force
+      // this page into a Suspense bailout at build time.
+      const next = new URLSearchParams(window.location.search).get('next');
+      router.push(postLoginRoute(result.admin, next));
     } catch (err) {
       setCode(Array(OTP_LENGTH).fill(''));
       inputsRef.current[0]?.focus();

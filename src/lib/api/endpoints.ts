@@ -42,6 +42,29 @@ export const endpoints = {
     revokeVerification: (id: string) => `/admin/partners/${id}/revoke-verification`,
     verifyDocument: (partnerId: string, documentId: string) =>
       `/admin/partners/${partnerId}/documents/${documentId}/verify`,
+    bankDetails: (id: string) => `/admin/partners/${id}/bank-details`,
+    verifyBank: (id: string) => `/admin/partners/${id}/bank-details/verify`,
+    rejectBank: (id: string) => `/admin/partners/${id}/bank-details/reject`,
+  },
+  wallets: {
+    list: '/admin/wallets',
+    stats: '/admin/wallets/stats',
+    detail: (partnerId: string) => `/admin/wallets/${partnerId}`,
+    // `/ledger`, not `/transactions` — the backend stubs are already built under this path.
+    ledger: (partnerId: string) => `/admin/wallets/${partnerId}/ledger`,
+    adjust: (partnerId: string) => `/admin/wallets/${partnerId}/adjust`,
+  },
+  payouts: {
+    eligible: '/admin/payouts/eligible',
+    ineligible: '/admin/payouts/ineligible',
+    list: '/admin/payouts',
+    stats: '/admin/payouts/stats',
+    detail: (id: string) => `/admin/payouts/${id}`,
+    record: '/admin/payouts/record',
+    reverse: (id: string) => `/admin/payouts/${id}/reverse`,
+    resendNotification: (id: string) => `/admin/payouts/${id}/resend-notification`,
+    manual: '/admin/payouts/manual',
+    exportCsv: '/admin/payouts/export.csv',
   },
   units: {
     list: '/admin/units',

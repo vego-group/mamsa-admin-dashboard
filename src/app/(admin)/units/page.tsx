@@ -15,6 +15,7 @@ import {
   SearchInput,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { UnitCard } from '@/components/units/UnitCard';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,14 @@ const PAGE_SIZE = 8;
 type View = 'grid' | 'list';
 
 export default function UnitsPage() {
+  return (
+    <RequirePermission permission="units.view">
+      <UnitsPageContent />
+    </RequirePermission>
+  );
+}
+
+function UnitsPageContent() {
   const t = useT();
   const router = useRouter();
 

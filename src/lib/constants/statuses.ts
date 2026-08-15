@@ -89,6 +89,18 @@ export const CANCELLATION_POLICY = {
 export type CancellationPolicyName =
   (typeof CANCELLATION_POLICY)[keyof typeof CANCELLATION_POLICY];
 
+/**
+ * Two states, and only ever two. A payout is created already `paid` — the accountant
+ * performs the bank transfer first and records it afterwards, so there is no pending
+ * state to render. A bounced transfer is `reversed`, which is a distinct accounting
+ * event, not a failed attempt.
+ */
+export const PAYOUT_STATUS = {
+  PAID: 'paid',
+  REVERSED: 'reversed',
+} as const;
+export type PayoutStatus = (typeof PAYOUT_STATUS)[keyof typeof PAYOUT_STATUS];
+
 export const NOTIFICATION_CATEGORY = {
   APPROVAL: 'approval',
   BOOKING: 'booking',
@@ -96,6 +108,9 @@ export const NOTIFICATION_CATEGORY = {
   PARTNER: 'partner',
   SYSTEM: 'system',
   REFUND: 'refund',
+  // Appended in Phase 4 — the existing set is unchanged.
+  PAYOUT: 'payout',
+  WALLET: 'wallet',
 } as const;
 export type NotificationCategory =
   (typeof NOTIFICATION_CATEGORY)[keyof typeof NOTIFICATION_CATEGORY];

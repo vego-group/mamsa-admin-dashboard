@@ -16,8 +16,9 @@ pnpm install
 pnpm dev          # http://localhost:3002
 ```
 
-Sign in at `/login` with any valid Saudi mobile (9 digits starting with `5`) and the
-mock OTP **`111222`**.
+Sign in at `/login` with any valid Saudi mobile (9 digits starting with `5`) and **any
+six-digit code**. The mock holds no fixed OTP and must never be given one — see
+[Never commit an OTP](#never-commit-an-otp).
 
 ## Mock → real backend
 
@@ -39,6 +40,63 @@ component imports `lib/mock` directly — every screen talks to `lib/api`, and e
 resource module decides internally whether to resolve against the mock or issue a
 real request. Endpoints are root-mounted (no `/api/v1` prefix) and every request
 sends `credentials: 'include'`.
+
+### Never commit an OTP
+
+**No sign-in code belongs in this repo** — not in source, not in `.env*`, not in a doc,
+not in a code fence in a runbook.
+
+The mock accepts **any six-digit code** and holds no fixed value. That is deliberate: it
+previously carried a literal that happened to equal the backend's fixed staging code, the
+value was published here, and the backend had to rotate it on 2026-08-14. A mock has no
+SMS gateway and nothing to verify against, so a fixed code buys nothing and costs exactly
+this.
+
+The staging fixed code is held privately by the backend team. If you need it, ask them
+directly and keep it out of the working tree.
+
+### Mock mode runs on a frozen clock — read before filing a date bug
+
+The whole mock dataset is anchored to a fixed reference point, `BASE_NOW` in
+`src/lib/mock/utils.ts` — **2026-07-27**. That is deliberate: it keeps the seed
+reproducible, and the payout rules (once per calendar month, period derivation) have to
+agree with the dates the seeded bookings actually carry. Mixing the seed clock with the
+wall clock would make "already paid this month" test a month no seeded payout lives in.
+
+Three consequences, all expected:
+
+- **"This month" means July 2026.** The payouts KPI reads `2026-07` (يوليو 2026)
+  whatever today's date is.
+- **Picking today's real date in the record-transfer dialog is rejected as
+  future-dated**, because it is in the future relative to the seed. The date field is
+  optional for exactly this reason — leave it blank and the server stamps its own clock,
+  which is the one that decides the payout period.
+- Ledger and payout history run *backwards* from July 2026, not from today.
+
+None of this applies with `NEXT_PUBLIC_USE_MOCK=false`; the real API uses real time.
+
+### Commission is 2% of the net base — mock leads the backend here
+
+**Commission is charged on `netBase`, never on the gross.** The guest price is
+VAT-inclusive, and the platform cannot take a cut of tax collected for ZATCA. So on every
+booking:
+
+```
+total = netBase + vat
+commission + partnerShare = netBase
+commission + partnerShare + vat = total
+```
+
+**This is a transitional divergence, not a bug.** The live API still returns the pre-VAT
+split — `commission` = 2% of `total`, `partnerShare` = 98% of `total` — per
+`BACKEND_SPEC.md` §5.8. The backend's own phase 2 (VAT-inclusive refactor) replaces that;
+it has not shipped yet. Mock mode represents the **target** state, so the same booking
+will show a slightly different commission in mock mode than against the real API until
+the backend catches up. Same shape as any other contract change landing on one side
+first.
+
+The wallet and payout math has been VAT-aware since Phase 2, so `partnerShare` on a
+booking already matches what lands in that partner's wallet.
 
 ## Locked platform rules
 

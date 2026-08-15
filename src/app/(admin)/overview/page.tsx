@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Clock,
   DollarSign,
+  Receipt,
   TrendingUp,
   Users,
   Zap,
@@ -25,6 +26,7 @@ import {
   PageHeader,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import {
   BookingStatusChart,
   CategoryBarChart,
@@ -44,6 +46,14 @@ const LATEST_REQUESTS = 5;
 const RECENT_CANCELLATIONS = 5;
 
 export default function OverviewPage() {
+  return (
+    <RequirePermission permission="dashboard.view">
+      <OverviewPageContent />
+    </RequirePermission>
+  );
+}
+
+function OverviewPageContent() {
   const t = useT();
   const router = useRouter();
 
@@ -201,6 +211,21 @@ export default function OverviewPage() {
           value={summary.activePartners.toLocaleString('en-US')}
           icon={Building2}
           delta={summary.deltas.activePartners}
+        />
+        <KpiCard
+          label={t.dashboard.netRevenue}
+          value={formatSAR(summary.netRevenue, { compact: true })}
+          hint={t.dashboard.netOfVat}
+          icon={DollarSign}
+          iconTone="green"
+        />
+        {/* VAT is visible but never counted as revenue — it is collected for ZATCA,
+            not earned. Its own card is what keeps it out of the revenue figure. */}
+        <KpiCard
+          label={t.dashboard.totalVat}
+          value={formatSAR(summary.totalVat, { compact: true })}
+          icon={Receipt}
+          iconTone="amber"
         />
       </div>
 

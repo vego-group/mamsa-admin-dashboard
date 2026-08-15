@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ConfirmDialog, ErrorState, LtrText, PdfViewer, RichText, StatusBadge } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -28,6 +29,14 @@ import { formatPercent, formatSAR } from '@/lib/utils/format';
 import type { UnitDetail } from '@/types';
 
 export default function UnitDetailPage({ params }: { params: { id: string } }) {
+  return (
+    <RequirePermission permission="units.view">
+      <UnitDetailPageContent params={params} />
+    </RequirePermission>
+  );
+}
+
+function UnitDetailPageContent({ params }: { params: { id: string } }) {
   const t = useT();
 
   const [detail, setDetail] = useState<UnitDetail | null>(null);

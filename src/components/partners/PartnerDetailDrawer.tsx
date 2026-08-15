@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, CircleX, FileText, Mail, MapPin, Phone, Star } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarDays, CircleX, ExternalLink, FileText, Mail, MapPin, Phone, Star, Wallet } from 'lucide-react';
 import { Avatar, ErrorState, LtrText, PdfViewer, StatusBadge } from '@/components/common';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,11 +16,12 @@ import {
 } from '@/components/ui/drawer';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
-import { ApiError, partnersApi } from '@/lib/api';
+import { useCan } from '@/hooks/useCan';
+import { ApiError, partnersApi, walletsApi } from '@/lib/api';
 import { DOCUMENT_STATUS, PARTNER_STATUS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatPercent, formatPhone, formatSAR } from '@/lib/utils/format';
-import type { ID, Partner, PartnerDetail, PartnerDocument } from '@/types';
+import type { ID, Partner, PartnerDetail, PartnerDocument, PartnerWallet } from '@/types';
 
 export interface PartnerDetailDrawerProps {
   partnerId: ID | null;
@@ -45,6 +47,9 @@ export function PartnerDetailDrawer({
   onSuspend,
 }: PartnerDetailDrawerProps) {
   const t = useT();
+  const { can } = useCan();
+  const canManage = can('partners.manage');
+  const canViewWallet = can('wallets.view');
   const [detail, setDetail] = useState<PartnerDetail | null>(null);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
@@ -154,6 +159,8 @@ export function PartnerDetailDrawer({
                 </DrawerContactRow>
               </DrawerSection>
 
+              {canViewWallet && <WalletCard partnerId={detail.id} />}
+
               <DrawerSection title={t.partners.financialSummary}>
                 <div className="grid grid-cols-2 gap-3">
                   <MoneyTile label={t.partners.totalRevenueTile} value={formatSAR(detail.revenue)} />
@@ -207,6 +214,7 @@ export function PartnerDetailDrawer({
                       key={document.id}
                       partnerId={detail.id}
                       document={document}
+                      canVerify={canManage}
                       open={document.id === openDocId}
                       onToggle={() =>
                         setOpenDocId((current) => (current === document.id ? null : document.id))
@@ -225,7 +233,7 @@ export function PartnerDetailDrawer({
             {/* Actions follow the partner's state: an applicant is admitted or turned
                 down; an active partner can independently gain or lose the verified
                 badge, and can always be suspended. */}
-            {detail.status === PARTNER_STATUS.PENDING && (
+            {canManage && detail.status === PARTNER_STATUS.PENDING && (
               <DrawerFooter>
                 <Button variant="success" className="flex-1" onClick={() => onApprove(detail)}>
                   {t.partners.approve}
@@ -235,7 +243,7 @@ export function PartnerDetailDrawer({
                 </Button>
               </DrawerFooter>
             )}
-            {detail.status === PARTNER_STATUS.ACTIVE && (
+            {canManage && detail.status === PARTNER_STATUS.ACTIVE && (
               <DrawerFooter>
                 {detail.verified ? (
                   <Button
@@ -265,12 +273,15 @@ export function PartnerDetailDrawer({
 function DocumentRow({
   partnerId,
   document,
+  canVerify,
   open,
   onToggle,
   onVerified,
 }: {
   partnerId: ID;
   document: PartnerDocument;
+  /** Finance may read a partner's KYC documents but never mark one verified. */
+  canVerify: boolean;
   open: boolean;
   onToggle: () => void;
   onVerified: () => void;
@@ -311,7 +322,7 @@ function DocumentRow({
         </span>
       </button>
       <StatusBadge status={document.status} dot={false} className="shrink-0" />
-      {document.status === DOCUMENT_STATUS.PENDING_REVIEW && (
+      {canVerify && document.status === DOCUMENT_STATUS.PENDING_REVIEW && (
         <Button
           variant="secondary"
           size="sm"
@@ -381,5 +392,72 @@ function PerformanceRow({
         <span className="font-semibold tabular-nums text-slate-900">{value}</span>
       </dd>
     </div>
+  );
+}
+
+/**
+ * A read of the partner's money position without leaving their profile. Behind
+ * `wallets.view` — the balance is not part of the KYC picture every admin needs.
+ */
+function WalletCard({ partnerId }: { partnerId: ID }) {
+  const t = useT();
+  const [wallet, setWallet] = useState<PartnerWallet | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let stale = false;
+    walletsApi
+      .get(partnerId)
+      .then((result) => !stale && setWallet(result))
+      .catch(() => !stale && setFailed(true));
+    return () => {
+      stale = true;
+    };
+  }, [partnerId]);
+
+  if (failed) return null;
+
+  return (
+    <DrawerSection title={t.wallets.detailTitle}>
+      {!wallet ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : (
+        <div className="rounded-2xl bg-surface-page p-4">
+          <div className="flex items-start justify-between gap-3">
+            <span className="inline-flex items-center gap-2 text-sm text-slate-600">
+              <Wallet className="h-4 w-4 text-slate-400" aria-hidden />
+              {t.wallets.availableBalance}
+            </span>
+            <StatusBadge
+              status={wallet.bankVerified ? 'verified' : 'pending_review'}
+              dot={false}
+            />
+          </div>
+
+          <p
+            className={cn(
+              'mt-2 text-xl font-semibold tabular-nums',
+              wallet.availableBalance < 0 ? 'text-status-red' : 'text-slate-900',
+            )}
+          >
+            {wallet.availableBalance < 0
+              ? `−${formatSAR(Math.abs(wallet.availableBalance))}`
+              : formatSAR(wallet.availableBalance)}
+          </p>
+
+          <p className="mt-1 text-sm text-slate-500">
+            {t.wallets.pendingBalance}: {formatSAR(wallet.pendingBalance)}
+          </p>
+
+          <Link
+            href={`/wallets?open=${partnerId}`}
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-brand-hover"
+          >
+            {t.wallets.ledger}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
+    </DrawerSection>
   );
 }

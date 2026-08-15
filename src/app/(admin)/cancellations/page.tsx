@@ -20,12 +20,14 @@ import {
   SearchInput,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { CancellationTrendChart, REFUND_COLOR } from '@/components/charts';
 import { CancellationDetailDrawer } from '@/components/cancellations/CancellationDetailDrawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
+import { useCan } from '@/hooks/useCan';
 import { ApiError, cancellationsApi } from '@/lib/api';
 import { CANCELLED_BY, REFUND_STATUS, type CancelledBy, type RefundStatus } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
@@ -39,6 +41,9 @@ function CancellationsPageContent() {
   const t = useT();
   const searchParams = useSearchParams();
   const openId = searchParams.get('open');
+  // Retrying a refund moves money; finance reads this screen but does not act on it.
+  const { can } = useCan();
+  const canManage = can('cancellations.manage');
 
   const [cancelledBy, setCancelledBy] = useState<CancelledBy | 'all'>('all');
   const [refundStatus, setRefundStatus] = useState<RefundStatus | 'all'>('all');
@@ -176,7 +181,7 @@ function CancellationsPageContent() {
           <span className="inline-flex items-center gap-2">
             <StatusBadge status={row.refundStatus} />
             {/* A failed refund is the one state that still owes the guest money. */}
-            {row.refundStatus === REFUND_STATUS.FAILED && (
+            {canManage && row.refundStatus === REFUND_STATUS.FAILED && (
               <button
                 type="button"
                 title={t.cancellations.retryRefund}
@@ -194,7 +199,7 @@ function CancellationsPageContent() {
         ),
       },
     ],
-    [t],
+    [t, canManage],
   );
 
   function exportCsv() {
@@ -388,9 +393,11 @@ function CancellationsPageContent() {
 
 export default function CancellationsPage() {
   return (
-    <Suspense fallback={null}>
-      <CancellationsPageContent />
-    </Suspense>
+    <RequirePermission permission="cancellations.view">
+      <Suspense fallback={null}>
+        <CancellationsPageContent />
+      </Suspense>
+    </RequirePermission>
   );
 }
 

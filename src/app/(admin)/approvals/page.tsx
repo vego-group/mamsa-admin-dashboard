@@ -20,6 +20,7 @@ import {
   StatCard,
   StatusBadge,
 } from '@/components/common';
+import { RequirePermission } from '@/components/auth';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,6 +40,14 @@ import type { ApprovalRequest, ApprovalStats, Paginated } from '@/types';
 const PAGE_SIZE = 10;
 
 export default function ApprovalsPage() {
+  return (
+    <RequirePermission permission="approvals.view">
+      <ApprovalsPageContent />
+    </RequirePermission>
+  );
+}
+
+function ApprovalsPageContent() {
   const t = useT();
   const router = useRouter();
 

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronRight, Globe, Menu, Search } from 'lucide-react';
 import { NotificationBell } from '@/components/notifications';
 import { useT } from '@/i18n';
+import { landingRouteFor } from '@/lib/auth/routes';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore, useUiStore } from '@/stores';
 import { NAV_GROUPS } from './nav-items';
@@ -33,7 +34,10 @@ export function Header() {
       </button>
 
       <nav aria-label="Breadcrumb" className="hidden items-center gap-1.5 text-sm sm:flex">
-        <Link href="/overview" className="text-slate-400 transition-colors hover:text-slate-600">
+        <Link
+          href={landingRouteFor(admin)}
+          className="text-slate-400 transition-colors hover:text-slate-600"
+        >
           Mamsa
         </Link>
         <ChevronRight className="h-3.5 w-3.5 text-slate-300 rtl:rotate-180" />

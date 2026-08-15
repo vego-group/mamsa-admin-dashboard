@@ -6,22 +6,35 @@ import type {
   ApprovalListParams,
   ApprovalRequest,
   ApprovalStats,
+  BankDetails,
   Booking,
   BookingDetail,
   BookingListParams,
   BookingStats,
   Cancellation,
+  CursorPage,
   CancellationListParams,
   CancellationStats,
   DashboardSummary,
+  EligiblePartner,
   HighRiskPartner,
+  IneligiblePartner,
   ID,
+  LedgerListParams,
   NotificationItem,
   Paginated,
   Partner,
   PartnerDetail,
+  PartnerLedgerEntry,
   PartnerListParams,
   PartnerStats,
+  PartnerWallet,
+  PartnerWalletDetail,
+  Payout,
+  PayoutDetail,
+  PayoutListParams,
+  PayoutStats,
+  RecordPayoutInput,
   ReportRange,
   ReportsSummary,
   Unit,
@@ -33,7 +46,13 @@ import type {
   UserDetail,
   UserListParams,
   UserStats,
+  WalletListParams,
+  WalletStats,
 } from '@/types';
+import {
+  normalizeAdminProfile,
+  type IncomingAdminProfile,
+} from '@/lib/auth/permissions';
 import { USE_MOCK, request } from './client';
 import { endpoints } from './endpoints';
 
@@ -45,27 +64,38 @@ export const authApi = {
       ? mock.mockAuth.requestOtp(phone)
       : request<Ok>(endpoints.auth.requestOtp, { method: 'POST', body: { phone } }),
 
+  // The deployed API sends neither `permissions` nor a role beyond 'superadmin';
+  // normalising here is what lets the rest of the app treat both as guaranteed.
   verifyOtp: (phone: string, code: string) =>
     USE_MOCK
       ? mock.mockAuth.verifyOtp(phone, code)
-      : request<{ ok: true; admin: AdminProfile }>(endpoints.auth.verifyOtp, {
+      : request<{ ok: true; admin: IncomingAdminProfile }>(endpoints.auth.verifyOtp, {
           method: 'POST',
           body: { phone, code },
-        }),
+        }).then((result) => ({ ...result, admin: normalizeAdminProfile(result.admin) })),
 
-  me: () => (USE_MOCK ? mock.mockAuth.me() : request<AdminProfile>(endpoints.auth.me)),
+  me: () =>
+    USE_MOCK
+      ? mock.mockAuth.me()
+      : request<IncomingAdminProfile>(endpoints.auth.me).then(normalizeAdminProfile),
 
   logout: () =>
     USE_MOCK ? mock.mockAuth.logout() : request<Ok>(endpoints.auth.logout, { method: 'POST' }),
 };
 
 export const profileApi = {
-  get: () => (USE_MOCK ? mock.mockProfile.get() : request<AdminProfile>(endpoints.profile.get)),
+  get: () =>
+    USE_MOCK
+      ? mock.mockProfile.get()
+      : request<IncomingAdminProfile>(endpoints.profile.get).then(normalizeAdminProfile),
 
   update: (patch: Partial<AdminProfile>) =>
     USE_MOCK
       ? mock.mockProfile.update(patch)
-      : request<AdminProfile>(endpoints.profile.update, { method: 'PATCH', body: patch }),
+      : request<IncomingAdminProfile>(endpoints.profile.update, {
+          method: 'PATCH',
+          body: patch,
+        }).then(normalizeAdminProfile),
 
   sessions: () =>
     USE_MOCK ? mock.mockProfile.sessions() : request<AdminSession[]>(endpoints.profile.sessions),
@@ -154,6 +184,24 @@ export const partnersApi = {
     USE_MOCK
       ? mock.mockPartners.verifyDocument(partnerId, documentId)
       : request<Ok>(endpoints.partners.verifyDocument(partnerId, documentId), { method: 'POST' }),
+
+  bankDetails: (partnerId: ID) =>
+    USE_MOCK
+      ? mock.mockWallets.bankDetails(partnerId)
+      : request<BankDetails | null>(endpoints.partners.bankDetails(partnerId)),
+
+  verifyBank: (partnerId: ID) =>
+    USE_MOCK
+      ? mock.mockWallets.verifyBank(partnerId)
+      : request<Ok>(endpoints.partners.verifyBank(partnerId), { method: 'POST' }),
+
+  rejectBank: (partnerId: ID, reason: string) =>
+    USE_MOCK
+      ? mock.mockWallets.rejectBank(partnerId, reason)
+      : request<Ok>(endpoints.partners.rejectBank(partnerId), {
+          method: 'POST',
+          body: { reason },
+        }),
 
   /** Admin-initiated onboarding: an SMS invite, then the partner completes KYC. */
   invite: (phone: string, type: Partner['type'], name?: string) =>
@@ -256,6 +304,109 @@ export const reportsApi = {
       ? mock.mockReports.summary(range)
       : request<ReportsSummary>(endpoints.reports.summary, { params: { range } }),
 };
+
+export const walletsApi = {
+  list: (params?: WalletListParams) =>
+    USE_MOCK
+      ? mock.mockWallets.list(params)
+      : request<Paginated<PartnerWallet>>(endpoints.wallets.list, { params: params as never }),
+
+  stats: () => (USE_MOCK ? mock.mockWallets.stats() : request<WalletStats>(endpoints.wallets.stats)),
+
+  get: (partnerId: ID) =>
+    USE_MOCK
+      ? mock.mockWallets.get(partnerId)
+      : request<PartnerWalletDetail>(endpoints.wallets.detail(partnerId)),
+
+  /** Cursor-paginated: pass the previous response's `nextCursor` as `before`. */
+  ledger: (partnerId: ID, params?: LedgerListParams) =>
+    USE_MOCK
+      ? mock.mockWallets.ledger(partnerId, params)
+      : request<CursorPage<PartnerLedgerEntry>>(endpoints.wallets.ledger(partnerId), {
+          params: params as never,
+        }),
+
+  adjust: (partnerId: ID, input: { amount: number; reason: string }) =>
+    USE_MOCK
+      ? mock.mockWallets.adjust(partnerId, input)
+      : request<Ok>(endpoints.wallets.adjust(partnerId), { method: 'POST', body: input }),
+};
+
+/**
+ * Builds the `recordPayout` request body.
+ *
+ * Exported so a test can assert what goes on the wire. The amount and the IBAN are
+ * **never** sent — not for convenience, not "for validation". Both are server-computed;
+ * putting them in the body is what would let a future bug or a tampered client change
+ * what actually gets paid.
+ */
+export function recordPayoutBody(input: RecordPayoutInput): Record<string, string> {
+  const body: Record<string, string> = {
+    partnerId: input.partnerId,
+    bankReference: input.bankReference.trim(),
+  };
+
+  if (input.paidAt) body.paidAt = input.paidAt;
+  const note = input.note?.trim();
+  if (note) body.note = note;
+
+  return body;
+}
+
+export const payoutsApi = {
+  listEligible: () =>
+    USE_MOCK
+      ? mock.mockPayouts.listEligible()
+      : request<EligiblePartner[]>(endpoints.payouts.eligible),
+
+  listIneligible: () =>
+    USE_MOCK
+      ? mock.mockPayouts.listIneligible()
+      : request<IneligiblePartner[]>(endpoints.payouts.ineligible),
+
+  list: (params?: PayoutListParams) =>
+    USE_MOCK
+      ? mock.mockPayouts.list(params)
+      : request<Paginated<Payout>>(endpoints.payouts.list, { params: params as never }),
+
+  stats: () =>
+    USE_MOCK ? mock.mockPayouts.stats() : request<PayoutStats>(endpoints.payouts.stats),
+
+  get: (id: ID) =>
+    USE_MOCK ? mock.mockPayouts.get(id) : request<PayoutDetail>(endpoints.payouts.detail(id)),
+
+  /** Idempotency-Key guards the one action in this app that moves money on a retry. */
+  record: (input: RecordPayoutInput) =>
+    USE_MOCK
+      ? mock.mockPayouts.record(input)
+      : request<{ ok: true; payoutId: string; reference: string }>(endpoints.payouts.record, {
+          method: 'POST',
+          body: recordPayoutBody(input),
+          headers: { 'Idempotency-Key': idempotencyKey() },
+        }),
+
+  reverse: (id: ID, input: { reason: string }) =>
+    USE_MOCK
+      ? mock.mockPayouts.reverse(id, input)
+      : request<Ok>(endpoints.payouts.reverse(id), { method: 'POST', body: input }),
+
+  resendNotification: (id: ID) =>
+    USE_MOCK
+      ? mock.mockPayouts.resendNotification(id)
+      : request<Ok>(endpoints.payouts.resendNotification(id), { method: 'POST' }),
+
+  createManual: (input: { partnerId: ID; amount: number; note: string; override?: boolean }) =>
+    USE_MOCK
+      ? mock.mockPayouts.createManual(input)
+      : request<{ ok: true; payoutId: string }>(endpoints.payouts.manual, {
+          method: 'POST',
+          body: input,
+        }),
+};
+
+function idempotencyKey(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export const notificationsApi = {
   list: () =>
