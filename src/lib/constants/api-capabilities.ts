@@ -38,20 +38,26 @@ export const SORTABLE_FIELDS = {
  * tested on the backend and awaiting our go-ahead, so this list should shrink to `iban`
  * alone once it ships. Source: backend reply `MAMSA-BACKEND-REPLY-open-items.md` §1.2.
  *
- * ✅ **Go-ahead given 2026-08-17.** Do **not** remove `commercial_registration` here the
- * day the column ships — wait until a company partner can actually upload one.
+ * ✅ **Go-ahead given 2026-08-17**, and the column shipped the same day — `cr_file` on
+ * `POST /auth/partner/register` is live on staging and production. Do **not** remove
+ * `commercial_registration` here yet.
  *
  * Removing it flips this document from a quiet grey "no file by design" to an amber
  * "not uploaded", which is a reviewer's finding. That is the right label only once the
- * finding is actionable; until the partner dashboard has the upload, it is an amber flag
- * on every company partner that nobody on either side can clear. The precondition is
- * therefore a partner-side upload, not a backend column:
+ * finding is actionable — and it is actionable only for companies registering *from
+ * now on*. Every company already on the platform registered before the field existed,
+ * and the route that lets them add one after the fact is still outstanding:
  *
  *   POST /uploads/presign { kind: "company_doc" } → PUT bytes → PUT /me/company-docs
  *   { crFileId }
  *
- * and a card on the partner's account screen for companies whose `crFileId` is null —
- * the same three-part chain the national-ID scan needed.
+ * plus a card on the partner's account screen for companies whose `crFileId` is null —
+ * the same three-part chain the national-ID scan needed. Until that ships, flipping this
+ * puts an amber flag on every existing company that nobody on either side can clear, and
+ * an alarm that can never be resolved is one reviewers learn to scroll past.
+ *
+ * Reading a `fileUrl` is unaffected: a company that *did* upload at registration opens
+ * normally today, because the row keys off the file, not off this list.
  */
 export const VALUE_ONLY_DOCUMENT_KINDS = ['commercial_registration', 'iban'] as const;
 
