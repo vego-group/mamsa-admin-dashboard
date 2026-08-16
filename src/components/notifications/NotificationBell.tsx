@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils/cn';
 import { formatDate, formatDateTime, formatTime } from '@/lib/utils/format';
 import { useNotificationsStore } from '@/stores';
 import type { NotificationItem } from '@/types';
-import { CATEGORY_ICON, CATEGORY_TONE, notificationHref } from './categories';
+import { categoryIcon, categoryTone, notificationHref } from './categories';
 
 /**
  * How often the badge re-checks while the tab is in front. A booking is confirmed
@@ -191,7 +191,7 @@ export function NotificationBell() {
 
 function PanelRow({ item, onOpen }: { item: NotificationItem; onOpen: () => void }) {
   const t = useT();
-  const Icon = CATEGORY_ICON[item.category];
+  const Icon = categoryIcon(item.category);
 
   return (
     <button
@@ -205,7 +205,7 @@ function PanelRow({ item, onOpen }: { item: NotificationItem; onOpen: () => void
       <span
         className={cn(
           'grid h-8 w-8 shrink-0 place-items-center rounded-lg',
-          CATEGORY_TONE[item.category],
+          categoryTone(item.category),
         )}
       >
         <Icon className="h-4 w-4" aria-hidden />

@@ -1,7 +1,16 @@
 import type { ListParams, Paginated } from '@/types';
 
-/** Visible-but-brief delay so loading states are exercised during UI work. */
+/**
+ * Visible-but-brief delay so loading states are exercised during UI work.
+ *
+ * Callers signal a mock error as `delay(Promise.reject(err))`, which builds the rejected
+ * promise **now** and hands it over unhandled until the timer fires — long enough for
+ * Node to report an unhandled rejection and fail a run that is otherwise green. Adopting
+ * it immediately marks it handled; the rejection still surfaces to whoever awaits the
+ * returned promise, because `resolve` adopts the same settled state.
+ */
 export function delay<T>(value: T, ms = 200 + Math.random() * 200): Promise<T> {
+  if (value instanceof Promise) value.catch(() => undefined);
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 

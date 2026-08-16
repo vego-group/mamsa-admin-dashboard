@@ -83,6 +83,10 @@ export function AddUnitDialog({ open, onOpenChange, onCreated }: AddUnitDialogPr
         </DialogHeader>
 
         <div className="max-h-[65vh] space-y-4 overflow-y-auto px-5 py-5">
+          <p className="rounded-xl bg-status-amberSoft px-3.5 py-2.5 text-sm leading-relaxed text-status-amber">
+            {t.units.addNoMediaWarning}
+          </p>
+
           <Field label={t.units.name}>
             <Input value={draft.name} onChange={(event) => set('name', event.target.value)} />
           </Field>

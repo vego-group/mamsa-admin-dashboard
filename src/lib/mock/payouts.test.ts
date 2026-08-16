@@ -92,8 +92,8 @@ describe('recording a transfer', () => {
 
     expect(recorded.amount).toBe(walletBefore.availableBalance);
     expect(recorded.amount).not.toBe(999_999);
-    expect(recorded.iban).toBe(walletBefore.bankDetails?.iban);
-    expect(recorded.iban).not.toBe('SA0000000000000000000000');
+    expect(recorded.ibanMasked).toBe(`••••${walletBefore.bankDetails!.iban.slice(-4)}`);
+    expect(recorded.ibanMasked).not.toContain('0000');
   });
 
   it('moves the money: balance drops, a negative row lands, lifetimePaidOut rises', async () => {
@@ -158,120 +158,6 @@ describe('recording a transfer', () => {
   });
 });
 
-describe('reversing a payout', () => {
-  it('compensates rather than edits, and restores the exact balance', async () => {
-    const [target] = await mockPayouts.listEligible();
-    const before = await mockWallets.get(target.partnerId);
-
-    const recorded = await mockPayouts.record({
-      partnerId: target.partnerId,
-      bankReference: 'FT-TO-BE-REVERSED',
-    });
-    const emptied = await mockWallets.get(target.partnerId);
-    expect(emptied.availableBalance).toBe(0);
-
-    await mockPayouts.reverse(recorded.payoutId, {
-      reason: 'ارتد التحويل من البنك لعدم تطابق الاسم',
-    });
-    const restored = await mockWallets.get(target.partnerId);
-
-    expect(restored.availableBalance).toBe(before.availableBalance);
-    expect(restored.lifetimePaidOut).toBe(before.lifetimePaidOut);
-
-    const detail = await mockPayouts.get(recorded.payoutId);
-    expect(detail.status).toBe(PAYOUT_STATUS.REVERSED);
-
-    // The original debit is still there, untouched, beside a new compensating credit.
-    const original = restored.recentLedger.find(
-      (row) => row.type === 'payout' && row.refId === recorded.payoutId,
-    )!;
-    const compensating = restored.recentLedger.find(
-      (row) => row.type === 'adjustment' && row.refId === recorded.payoutId,
-    )!;
-
-    expect(original.amount).toBe(-before.availableBalance);
-    expect(compensating.amount).toBe(before.availableBalance);
-    expect(compensating.refType).toBe('payout');
-  });
-
-  it('frees the month slot so the partner can be paid again', async () => {
-    const [target] = await mockPayouts.listEligible();
-
-    const recorded = await mockPayouts.record({
-      partnerId: target.partnerId,
-      bankReference: 'FT-FREES-SLOT',
-    });
-    await mockPayouts.reverse(recorded.payoutId, { reason: 'خطأ في رقم الحساب المستفيد' });
-
-    const eligible = await mockPayouts.listEligible();
-    expect(eligible.some((partner) => partner.partnerId === target.partnerId)).toBe(true);
-  });
-
-  it('refuses a second reversal', async () => {
-    const [target] = await mockPayouts.listEligible();
-    const recorded = await mockPayouts.record({
-      partnerId: target.partnerId,
-      bankReference: 'FT-DOUBLE-REVERSE',
-    });
-
-    await mockPayouts.reverse(recorded.payoutId, { reason: 'سبب أول كافٍ الطول' });
-    const error = await failureOf(
-      mockPayouts.reverse(recorded.payoutId, { reason: 'سبب ثانٍ كافٍ الطول' }),
-    );
-
-    expect(error.code).toBe('ALREADY_REVERSED');
-    expect(error.status).toBe(409);
-  });
-
-  it('requires a reason of at least 10 characters', async () => {
-    const [target] = await mockPayouts.listEligible();
-    const recorded = await mockPayouts.record({
-      partnerId: target.partnerId,
-      bankReference: 'FT-SHORT-REASON',
-    });
-
-    const error = await failureOf(mockPayouts.reverse(recorded.payoutId, { reason: 'خطأ' }));
-    expect(error.status).toBe(422);
-  });
-});
-
-describe('manual payouts', () => {
-  it('refuses an amount larger than the balance, override or not', async () => {
-    const [target] = await mockPayouts.listEligible();
-    const wallet = await mockWallets.get(target.partnerId);
-
-    const error = await failureOf(
-      mockPayouts.createManual({
-        partnerId: target.partnerId,
-        amount: wallet.availableBalance + 1,
-        note: 'تجاوز الرصيد',
-        override: true,
-      }),
-    );
-
-    expect(error.code).toBe('INSUFFICIENT_BALANCE');
-    expect(error.status).toBe(422);
-  });
-
-  it('bypasses the minimum and the monthly cap when overridden', async () => {
-    const ineligible = await mockPayouts.listIneligible();
-    const below = ineligible.find(
-      (partner) => partner.reason === 'below_minimum' && partner.availableBalance > 0,
-    );
-    if (!below) return;
-
-    const result = await mockPayouts.createManual({
-      partnerId: below.partnerId,
-      amount: below.availableBalance,
-      note: 'تسوية استثنائية',
-      override: true,
-    });
-
-    const detail = await mockPayouts.get(result.payoutId);
-    expect(detail.isManual).toBe(true);
-    expect(detail.status).toBe(PAYOUT_STATUS.PAID);
-  });
-});
 
 /**
  * Checked against the seed rather than the live store: a payout recorded at runtime is
@@ -302,11 +188,10 @@ describe('seeded payouts reconcile against their booking lines', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('has 14 paid payouts across prior months, one reversed and one manual', () => {
+  it('has 14 paid payouts across prior months, one reversed', () => {
     const paid = seed.payouts.filter((payout) => payout.status === PAYOUT_STATUS.PAID);
     expect(paid.length).toBeGreaterThanOrEqual(14);
     expect(seed.payouts.filter((p) => p.status === PAYOUT_STATUS.REVERSED)).toHaveLength(1);
-    expect(seed.payouts.filter((p) => p.isManual)).toHaveLength(1);
     expect(new Set(seed.payouts.map((p) => p.periodMonth)).size).toBeGreaterThanOrEqual(3);
   });
 });

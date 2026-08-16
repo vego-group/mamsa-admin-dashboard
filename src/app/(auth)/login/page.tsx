@@ -51,10 +51,28 @@ export default function LoginPage() {
       setCountdown(OTP_RESEND_SECONDS);
       setTimeout(() => inputsRef.current[0]?.focus(), 50);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
+      /*
+       * The server allows three OTP requests per ten minutes, keyed by phone — a
+       * stricter rule than our 60s cooldown, so a user can obey the countdown and still
+       * be refused on the third resend. Rather than mirror the limiter (two copies of
+       * one rule, guaranteed to drift), we react to the 429: `Retry-After` is
+       * authoritative, so the countdown adopts it and the button stays disabled for
+       * exactly as long as the server means.
+       */
+      if (err instanceof ApiError && err.status === 429) {
+        setError(rateLimitMessage(err.retryAfterSeconds));
+        if (err.retryAfterSeconds) setCountdown(err.retryAfterSeconds);
+      } else {
+        setError(err instanceof ApiError ? err.message : t.auth.errors.network);
+      }
     } finally {
       setPending(false);
     }
+  }
+
+  function rateLimitMessage(retryAfterSeconds: number | null): string {
+    if (!retryAfterSeconds) return t.auth.errors.rateLimitedSoon;
+    return t.auth.errors.rateLimited(Math.max(1, Math.ceil(retryAfterSeconds / 60)));
   }
 
   async function verify(value = code.join('')) {
@@ -72,7 +90,12 @@ export default function LoginPage() {
     } catch (err) {
       setCode(Array(OTP_LENGTH).fill(''));
       inputsRef.current[0]?.focus();
-      setError(err instanceof ApiError ? err.message : t.auth.errors.network);
+      // Verify is limited too, at 10/minute — same untranslated 429.
+      if (err instanceof ApiError && err.status === 429) {
+        setError(rateLimitMessage(err.retryAfterSeconds));
+      } else {
+        setError(err instanceof ApiError ? err.message : t.auth.errors.network);
+      }
     } finally {
       setPending(false);
     }

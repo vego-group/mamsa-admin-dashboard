@@ -11,7 +11,12 @@ import {
   PageHeader,
 } from '@/components/common';
 import { RequirePermission } from '@/components/auth';
-import { CATEGORY_ICON, CATEGORY_TONE, notificationHref } from '@/components/notifications';
+import {
+  CATEGORY_ICON,
+  categoryIcon,
+  categoryTone,
+  notificationHref,
+} from '@/components/notifications';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -187,7 +192,7 @@ function NotificationRow({
   onOpen: () => void;
 }) {
   const t = useT();
-  const Icon = CATEGORY_ICON[item.category];
+  const Icon = categoryIcon(item.category);
 
   return (
     <button
@@ -199,7 +204,10 @@ function NotificationRow({
       )}
     >
       <span
-        className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-xl', CATEGORY_TONE[item.category])}
+        className={cn(
+          'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
+          categoryTone(item.category),
+        )}
       >
         <Icon className="h-5 w-5" aria-hidden />
       </span>

@@ -45,11 +45,8 @@ import type {
   PartnerWallet,
   PartnerWalletDetail,
   Payout,
-  PayoutBookingLine,
-  PayoutDetail,
+  PayoutPage,
   PayoutListParams,
-  PayoutStats,
-  PayoutTimelineEvent,
   RecordPayoutInput,
   ReportRange,
   ReportsSummary,
@@ -222,6 +219,9 @@ export const mockPartners = {
   },
 
   approve: (id: ID) => delay({ ok: true as const, id }),
+
+  /** Lifts a suspension and clears the stored reason in the same call. */
+  reactivate: (id: ID) => delay({ ok: true as const, id }),
   reject: (id: ID, reason: string) => delay({ ok: true as const, id, reason }),
   suspend: (id: ID, reason: string) => delay({ ok: true as const, id, reason }),
   verify: (id: ID) => delay({ ok: true as const, id }),
@@ -281,6 +281,14 @@ export const mockWallets = {
       bankUnverifiedCount: countReason('bank_unverified'),
       bankMissingCount: countReason('bank_missing'),
       negativeBalanceCount: countReason('negative_balance'),
+      alreadyPaidCount: countReason('already_paid_this_month'),
+      suspendedCount: countReason('partner_suspended'),
+      // Payable on balance with no unpaid finished stay to attach the money to. The mock
+      // has no such partner, but the count must exist or the row does not partition.
+      nothingPayableCount: 0,
+      partnersCount: walletStore.length,
+      currency: 'SAR',
+      minimumPayout: PAYOUT_MIN_BALANCE,
     });
   },
 
@@ -367,39 +375,6 @@ const ledgerStore: Record<string, PartnerLedgerEntry[]> = Object.fromEntries(
   Object.entries(seed.partnerLedgers).map(([id, rows]) => [id, rows.map((row) => ({ ...row }))]),
 );
 const coverageStore: Record<string, Booking[]> = { ...seed.payoutCoverage };
-const timelineStore: Record<string, PayoutTimelineEvent[]> = Object.fromEntries(
-  payoutStore.map((payout) => [
-    payout.id,
-    [
-      {
-        at: payout.paidAt,
-        event: 'recorded' as const,
-        actor: payout.recordedByAdminName,
-        detail: `المرجع البنكي ${payout.bankReference}`,
-      },
-      ...(payout.notifiedAt
-        ? [
-            {
-              at: payout.notifiedAt,
-              event: 'notified' as const,
-              actor: 'النظام',
-              detail: null,
-            },
-          ]
-        : []),
-      ...(payout.reversedAt
-        ? [
-            {
-              at: payout.reversedAt,
-              event: 'reversed' as const,
-              actor: seed.adminProfile.name,
-              detail: payout.reversalReason,
-            },
-          ]
-        : []),
-    ],
-  ]),
-);
 
 const nowIso = () => BASE_NOW.toISOString();
 const currentPeriod = () => seed.riyadhPeriodMonth(nowIso());
@@ -524,19 +499,6 @@ function toEligiblePartner(wallet: PartnerWallet): EligiblePartner {
   };
 }
 
-function bookingLine(booking: Booking): PayoutBookingLine {
-  const split = splitPrice(booking.total);
-  return {
-    bookingId: booking.id,
-    bookingCode: booking.code,
-    unitName: booking.unitName,
-    checkOut: booking.checkOut,
-    gross: split.gross,
-    netBase: split.netBase,
-    commission: split.commission,
-    partnerShare: split.partnerShare,
-  };
-}
 
 function failNotEligible(reason: WalletIneligibleReason): Promise<never> {
   const code = reason === 'already_paid_this_month' ? 'ALREADY_PAID_THIS_MONTH' : 'NOT_ELIGIBLE';
@@ -580,7 +542,12 @@ export const mockPayouts = {
         .sort((a, b) => b.availableBalance - a.availableBalance),
     ),
 
-  list: (params?: PayoutListParams): Promise<Paginated<Payout>> => {
+  /**
+   * `totalAmount` covers the whole filter rather than the page, and excludes reversed
+   * rows — that money came back. `items` still contains them, so the list and the total
+   * deliberately answer different questions.
+   */
+  list: (params?: PayoutListParams): Promise<PayoutPage> => {
     let items = [...payoutStore];
 
     if (params?.status && params.status !== 'all') {
@@ -590,63 +557,18 @@ export const mockPayouts = {
       items = items.filter((payout) => payout.periodMonth === params.periodMonth);
     }
     if (params?.partnerId) items = items.filter((p) => p.partnerId === params.partnerId);
-    if (params?.from) {
-      const from = new Date(params.from).getTime();
-      items = items.filter((p) => new Date(p.paidAt).getTime() >= from);
-    }
-    if (params?.to) {
-      const to = new Date(params.to).getTime();
-      items = items.filter((p) => new Date(p.paidAt).getTime() <= to);
-    }
 
     items = items.filter((payout) =>
-      matches(
-        [payout.reference, payout.partnerName, payout.bankReference],
-        params?.q ?? params?.search,
-      ),
+      matches([payout.reference, payout.partnerName, payout.bankReference], params?.search),
     );
     items.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 
-    return delay(paginate(items, params));
-  },
-
-  stats: (): Promise<PayoutStats> => {
-    const period = currentPeriod();
-    const eligible = walletStore.filter((wallet) => payoutBlocker(wallet) === null);
-    const paidThisMonth = payoutStore.filter(
-      (payout) => payout.status === PAYOUT_STATUS.PAID && payout.periodMonth === period,
-    );
+    const settled = items.filter((payout) => payout.status === PAYOUT_STATUS.PAID);
 
     return delay({
-      eligibleCount: eligible.length,
-      eligibleAmount: round2(eligible.reduce((sum, w) => sum + w.availableBalance, 0)),
-      paidThisMonthCount: paidThisMonth.length,
-      paidThisMonthAmount: round2(paidThisMonth.reduce((sum, p) => sum + p.amount, 0)),
-      ineligibleCount: walletStore.filter((wallet) => payoutBlocker(wallet) !== null).length,
-      reversedCount: payoutStore.filter((p) => p.status === PAYOUT_STATUS.REVERSED).length,
-      lifetimePaidAmount: round2(
-        payoutStore
-          .filter((p) => p.status === PAYOUT_STATUS.PAID)
-          .reduce((sum, p) => sum + p.amount, 0),
-      ),
-      currentPeriodMonth: period,
-    });
-  },
-
-  get: (id: ID): Promise<PayoutDetail> => {
-    const payout = payoutStore.find((item) => item.id === id);
-    if (!payout) {
-      return delay(
-        Promise.reject(new ApiError('الحوالة غير موجودة', 404, 'NOT_FOUND')),
-      ) as Promise<never>;
-    }
-
-    return delay({
-      ...payout,
-      bookings: (coverageStore[payout.id] ?? []).map(bookingLine),
-      timeline: [...(timelineStore[payout.id] ?? [])].sort(
-        (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
-      ),
+      ...paginate(items, params),
+      totalAmount: round2(settled.reduce((sum, payout) => sum + payout.amount, 0)),
+      totalBookingsCount: settled.reduce((sum, payout) => sum + payout.bookingsCount, 0),
     });
   },
 
@@ -698,34 +620,24 @@ export const mockPayouts = {
       reference: `PYT-${period.replace('-', '')}-${String(payoutStore.length + 1).padStart(3, '0')}`,
       partnerId: partner.id,
       partnerName: partner.name,
-      partnerType: partner.type,
       periodMonth: period,
       amount,
       bookingsCount: covered.length,
       currency: 'SAR',
-      // Frozen at record time: the drawer must show what was paid, not what is current.
-      iban: bank?.iban ?? '',
-      bankName: bank?.bankName ?? null,
-      accountHolderName: bank?.accountHolderName ?? partner.name,
       status: PAYOUT_STATUS.PAID,
       paidAt,
-      recordedByAdminId: seed.financeAdminProfile.id,
-      recordedByAdminName: seed.financeAdminProfile.name,
       bankReference: reference,
+      // Frozen at record time: the row must show where the money went, not where the
+      // partner's account points today.
+      ibanMasked: bank ? `••••${bank.iban.slice(-4)}` : '••••',
+      bankName: bank?.bankName ?? null,
       note: input.note?.trim() || null,
       reversedAt: null,
-      reversedByAdminId: null,
       reversalReason: null,
-      notifiedAt: paidAt,
-      isManual: false,
     };
 
     payoutStore.push(payout);
     coverageStore[id] = covered;
-    timelineStore[id] = [
-      { at: paidAt, event: 'recorded', actor: payout.recordedByAdminName, detail: `المرجع البنكي ${reference}` },
-      { at: paidAt, event: 'notified', actor: 'النظام', detail: null },
-    ];
 
     appendLedgerRow(partner.id, {
       type: 'payout',
@@ -735,146 +647,10 @@ export const mockPayouts = {
       refCode: payout.reference,
       description: `حوالة صادرة ${payout.reference}`,
       createdAt: paidAt,
-      createdByAdminId: payout.recordedByAdminId,
+      createdByAdminId: seed.financeAdminProfile.id,
     });
 
     return delay({ ok: true as const, payoutId: id, reference: payout.reference });
-  },
-
-  /**
-   * Writes a compensating credit; it never edits or deletes the original debit. The
-   * partner's slot for that month is freed because `paidPayoutIn` only counts `paid`.
-   */
-  reverse: (id: ID, input: { reason: string }) => {
-    const payout = payoutStore.find((item) => item.id === id);
-    if (!payout) {
-      return delay(
-        Promise.reject(new ApiError('الحوالة غير موجودة', 404, 'NOT_FOUND')),
-      ) as Promise<never>;
-    }
-    if (payout.status !== PAYOUT_STATUS.PAID) {
-      return delay(
-        Promise.reject(new ApiError('تم عكس هذه الحوالة مسبقاً', 409, 'ALREADY_REVERSED')),
-      ) as Promise<never>;
-    }
-    if (input.reason.trim().length < 10) {
-      return delay(
-        Promise.reject(new ApiError('سبب العكس مطلوب (10 أحرف على الأقل)', 422, 'VALIDATION_ERROR')),
-      ) as Promise<never>;
-    }
-
-    const at = nowIso();
-    payout.status = PAYOUT_STATUS.REVERSED;
-    payout.reversedAt = at;
-    payout.reversedByAdminId = seed.adminProfile.id;
-    payout.reversalReason = input.reason.trim();
-
-    // The bookings it settled become unsettled again.
-    delete coverageStore[payout.id];
-
-    timelineStore[payout.id] = [
-      ...(timelineStore[payout.id] ?? []),
-      { at, event: 'reversed', actor: seed.adminProfile.name, detail: payout.reversalReason },
-    ];
-
-    appendLedgerRow(payout.partnerId, {
-      type: 'adjustment',
-      amount: payout.amount,
-      refType: 'payout',
-      refId: payout.id,
-      refCode: payout.reference,
-      description: `عكس الحوالة ${payout.reference}`,
-      createdAt: at,
-      createdByAdminId: seed.adminProfile.id,
-    });
-
-    return delay({ ok: true as const, id });
-  },
-
-  resendNotification: (id: ID) => {
-    const payout = payoutStore.find((item) => item.id === id);
-    if (payout) {
-      const at = nowIso();
-      payout.notifiedAt = at;
-      timelineStore[id] = [
-        ...(timelineStore[id] ?? []),
-        { at, event: 'notified', actor: 'النظام', detail: null },
-      ];
-    }
-    return delay({ ok: true as const, id });
-  },
-
-  createManual: (input: { partnerId: ID; amount: number; note: string; override?: boolean }) => {
-    const wallet = walletOf(input.partnerId);
-    const partner = partnerOf(input.partnerId);
-    if (!wallet || !partner) {
-      return delay(
-        Promise.reject(new ApiError('الشريك غير موجود', 404, 'NOT_FOUND')),
-      ) as Promise<never>;
-    }
-
-    if (input.amount > wallet.availableBalance) {
-      return delay(
-        Promise.reject(new ApiError('المبلغ يتجاوز الرصيد المستحق', 422, 'INSUFFICIENT_BALANCE')),
-      ) as Promise<never>;
-    }
-
-    // `override` bypasses the floor and the once-per-month cap — nothing else.
-    if (!input.override) {
-      const blocker = payoutBlocker(wallet);
-      if (blocker) return failNotEligible(blocker);
-    }
-
-    const at = nowIso();
-    const period = seed.riyadhPeriodMonth(at);
-    const bank = seed.bankDetailsByPartner[input.partnerId];
-    const id = `pay_${String(payoutStore.length + 1).padStart(3, '0')}`;
-
-    const payout: Payout = {
-      id,
-      reference: `PYT-${period.replace('-', '')}-M${String(payoutStore.length + 1).padStart(3, '0')}`,
-      partnerId: partner.id,
-      partnerName: partner.name,
-      partnerType: partner.type,
-      periodMonth: period,
-      amount: input.amount,
-      bookingsCount: 0,
-      currency: 'SAR',
-      iban: bank?.iban ?? '',
-      bankName: bank?.bankName ?? null,
-      accountHolderName: bank?.accountHolderName ?? partner.name,
-      status: PAYOUT_STATUS.PAID,
-      paidAt: at,
-      recordedByAdminId: seed.adminProfile.id,
-      recordedByAdminName: seed.adminProfile.name,
-      bankReference: `MAN-${payoutStore.length + 1}`,
-      note: input.note.trim() || null,
-      reversedAt: null,
-      reversedByAdminId: null,
-      reversalReason: null,
-      notifiedAt: at,
-      isManual: true,
-    };
-
-    payoutStore.push(payout);
-    coverageStore[id] = [];
-    timelineStore[id] = [
-      { at, event: 'recorded', actor: payout.recordedByAdminName, detail: payout.note },
-      { at, event: 'notified', actor: 'النظام', detail: null },
-    ];
-
-    appendLedgerRow(partner.id, {
-      type: 'payout',
-      amount: -input.amount,
-      refType: 'payout',
-      refId: id,
-      refCode: payout.reference,
-      description: `دفعة استثنائية ${payout.reference}`,
-      createdAt: at,
-      createdByAdminId: payout.recordedByAdminId,
-    });
-
-    return delay({ ok: true as const, payoutId: id });
   },
 };
 
@@ -1152,8 +928,8 @@ export const mockReports = {
     const netRevenue = round2(
       revenueSeries.reduce((sum, point) => sum + splitPrice(point.revenue).netBase, 0),
     );
-    // Derived by subtraction, exactly as the backend derives it (`total − taxes`), so
-    // `netRevenue + vatCollected === totalRevenue` holds to the halala instead of
+    // Derived by subtraction, exactly as the admin endpoint derives it (`total − taxes`),
+    // so `netRevenue + vatCollected === totalRevenue` holds to the halala instead of
     // drifting a cent from two independently rounded sums.
     const vatCollected = round2(totalRevenue - netRevenue);
     const paidPayouts = payoutStore.filter((payout) => payout.status === PAYOUT_STATUS.PAID);
@@ -1162,6 +938,9 @@ export const mockReports = {
       totalRevenue,
       totalCommission,
       netRevenue,
+      // `vatCollected`, not `vat` — this mock stands in for /ADMIN/reports/summary, and
+      // the two report endpoints have genuinely different vocabularies. `fees` and
+      // `netProfit` belong to the partner endpoint and are deliberately absent here.
       vatCollected,
       // What the partners keep out of the net base, after the platform's commission.
       partnersShare: round2(netRevenue - totalCommission),

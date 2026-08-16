@@ -28,12 +28,13 @@ import { ApiError, partnersApi } from '@/lib/api';
 import { PARTNER_TYPE } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatSAR } from '@/lib/utils/format';
+import { appliedSort } from '@/lib/utils/sort';
 import type { ID, Paginated, Partner, PartnerStats } from '@/types';
 
 const PAGE_SIZE = 8;
 
 type TypeFilter = Partner['type'] | 'all';
-type ActionKind = 'approve' | 'reject' | 'verify' | 'revoke' | 'suspend';
+type ActionKind = 'approve' | 'reject' | 'verify' | 'revoke' | 'suspend' | 'reactivate';
 type PendingAction = { kind: ActionKind; partner: Partner } | null;
 
 function PartnersPageContent() {
@@ -62,6 +63,9 @@ function PartnersPageContent() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
+
+  /** The arrow follows what the API applied, not what we asked for. See appliedSort. */
+  const applied = appliedSort(result, sort);
 
   useEffect(() => {
     let stale = false;
@@ -140,7 +144,14 @@ function PartnersPageContent() {
         key: 'city',
         header: t.partners.city,
         width: '9%',
-        cell: (row) => t.cities[row.city as keyof typeof t.cities] ?? row.city,
+        // `city` is frequently `""` on real rows — an em dash reads as "not recorded",
+        // where a blank cell reads as a rendering failure.
+        cell: (row) =>
+          row.city ? (
+            (t.cities[row.city as keyof typeof t.cities] ?? row.city)
+          ) : (
+            <span className="text-slate-300">—</span>
+          ),
       },
       {
         key: 'unitsCount',
@@ -314,8 +325,8 @@ function PartnersPageContent() {
         onRetry={reload}
         onRowClick={(row) => setInspecting(row.id)}
         emptyTitle={t.partners.empty}
-        sortBy={sort?.by}
-        sortDir={sort?.dir}
+        sortBy={applied.by}
+        sortDir={applied.dir}
         onSort={(key) =>
           setSort((current) =>
             current?.by === key
@@ -354,6 +365,7 @@ function PartnersPageContent() {
         onVerify={(partner) => openAction('verify', partner)}
         onRevokeVerification={(partner) => openAction('revoke', partner)}
         onSuspend={(partner) => openAction('suspend', partner)}
+        onReactivate={(partner) => openAction('reactivate', partner)}
       />
 
       <AddPartnerDialog open={adding} onOpenChange={setAdding} onInvited={reload} />
@@ -405,6 +417,23 @@ function PartnersPageContent() {
           <RichText template={t.partners.revokeQuestion} values={{ name: target?.name ?? '' }} />
         }
         onConfirm={() => runAction(() => partnersApi.revokeVerification(target!.id))}
+      />
+
+      {/*
+        Not a toggle paired with suspend — a separate, confirmed action. It also clears
+        the stored suspension reason, which the users-screen route does not, so the
+        partner does not carry a stale explanation after being reinstated.
+      */}
+      <ConfirmDialog
+        open={pendingAction?.kind === 'reactivate'}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        title={t.partners.reactivateTitle}
+        variant="success"
+        description={
+          <RichText template={t.partners.reactivateQuestion} values={{ name: target?.name ?? '' }} />
+        }
+        confirmLabel={t.partners.reactivate}
+        onConfirm={() => runAction(() => partnersApi.reactivate(target!.id))}
       />
 
       <ConfirmDialog

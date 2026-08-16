@@ -883,6 +883,9 @@ export const bankDetailsByPartner: Record<string, BankDetails | null> = Object.f
         bankName: index % 2 === 0 ? 'مصرف الراجحي' : 'البنك الأهلي السعودي',
         verified,
         verifiedAt: verified ? daysAgo(200 - index * 5) : null,
+        // Alternating on purpose: `verifiedBy` is null on records that predate the field,
+        // so both the named and the unnamed rendering get exercised in mock mode.
+        verifiedBy: verified && index % 2 === 0 ? 'محمد أشرف' : null,
         rejectionReason: null,
         updatedAt: daysAgo(210 - index * 5),
       } satisfies BankDetails,
@@ -981,25 +984,20 @@ export const payouts: Payout[] = PAYOUT_GROUPS.flatMap((group, index) => {
       reference: `PYT-${periodOf(group.monthsBack).replace('-', '')}-${String(index + 1).padStart(3, '0')}`,
       partnerId: partner.id,
       partnerName: partner.name,
-      partnerType: partner.type,
       periodMonth: riyadhPeriodMonth(paidAt),
       amount,
       bookingsCount: covered.length,
       currency: 'SAR',
-      iban: bank?.iban ?? '',
-      bankName: bank?.bankName ?? null,
-      accountHolderName: bank?.accountHolderName ?? partner.name,
       status,
       paidAt,
-      recordedByAdminId: group.isManual ? adminProfile.id : financeAdminProfile.id,
-      recordedByAdminName: group.isManual ? adminProfile.name : financeAdminProfile.name,
       bankReference: `FT${24500 + index * 137}SA`,
+      // Masked even on the admin surface — a payout row identifies its destination
+      // without carrying a full IBAN into a list, a CSV export and a browser cache.
+      ibanMasked: bank ? `••••${bank.iban.slice(-4)}` : '••••',
+      bankName: bank?.bankName ?? null,
       note: group.isManual ? 'دفعة استثنائية خارج الدورة الشهرية' : null,
       reversedAt: reversed ? monthAnchor(group.monthsBack, 28).toISOString() : null,
-      reversedByAdminId: reversed ? adminProfile.id : null,
       reversalReason: reversed ? 'ارتد التحويل من البنك لعدم تطابق اسم صاحب الحساب' : null,
-      notifiedAt: paidAt,
-      isManual: group.isManual ?? false,
     } satisfies Payout,
   ];
 });
@@ -1068,7 +1066,7 @@ function ledgerEvents(): LedgerEvent[] {
       refCode: payout.reference,
       description: `حوالة صادرة ${payout.reference}`,
       createdAt: payout.paidAt,
-      createdByAdminId: payout.recordedByAdminId,
+      createdByAdminId: financeAdminProfile.id,
     });
 
     // A reversal never edits or deletes the original debit — it writes a compensating
@@ -1083,7 +1081,7 @@ function ledgerEvents(): LedgerEvent[] {
         refCode: payout.reference,
         description: `عكس الحوالة ${payout.reference}`,
         createdAt: payout.reversedAt,
-        createdByAdminId: payout.reversedByAdminId,
+        createdByAdminId: adminProfile.id,
       });
     }
   }

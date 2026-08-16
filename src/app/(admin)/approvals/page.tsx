@@ -329,6 +329,7 @@ function ApprovalsPageContent() {
 
       {showFilters && (
         <Card className="flex flex-wrap items-end gap-3 p-4">
+          {/* Searches unit name, unit code, city and partner name. */}
           <SearchInput
             value={search}
             onChange={setSearch}
@@ -336,11 +337,17 @@ function ApprovalsPageContent() {
             className="w-full min-w-0 flex-1 sm:max-w-sm"
           />
 
+          {/*
+            `reapproval_after_edit` is accepted by the API and always returns empty — it
+            is not tracked yet. Offering it hands the reviewer a filter that can only ever
+            empty the queue, which reads as a bug in the queue rather than a gap in the
+            data. It stays in REQUEST_TYPE because rows can still carry it.
+          */}
           <FilterSelect
             label={t.approvals.requestType}
             value={requestType}
             onChange={(value) => setRequestType(value as RequestType | 'all')}
-            options={Object.values(REQUEST_TYPE).map((value) => ({
+            options={[REQUEST_TYPE.NEW, REQUEST_TYPE.RESUBMISSION].map((value) => ({
               value,
               label: t.status[value],
             }))}

@@ -13,12 +13,22 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /**
+   * Seconds from `Retry-After`, on the responses that carry it.
+   *
+   * A 429 is thrown by the framework's rate limiter *before* the app's exception
+   * handler, so it has no `code` and its `message` is untranslated English. The header
+   * is the only trustworthy thing on it — and the only number that tells a user when
+   * they may try again.
+   */
+  readonly retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number, code = 'UNKNOWN') {
+  constructor(message: string, status: number, code = 'UNKNOWN', retryAfterSeconds: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -38,8 +48,11 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
  * A denied permission is not a dead session — the admin stays signed in and is told
  * what happened. Only 401 ever logs anyone out.
  *
- * Both codes are accepted: `FORBIDDEN` is what the deployed API returns today,
- * `INSUFFICIENT_PERMISSION` is the finer-grained code the contract reserves for it.
+ * `FORBIDDEN` is what the deployed API returns. `INSUFFICIENT_PERMISSION` is kept
+ * deliberately, against the backend's advice to drop it (reply 2026-08-16 §4.4): the
+ * "complete set of nine codes" given there omits `UNAUTHENTICATED`, which staging
+ * demonstrably returns on every 401. A list with a known omission is not a list to
+ * tighten against, and tolerating an extra string costs nothing.
  */
 const PERMISSION_DENIED_CODES = ['INSUFFICIENT_PERMISSION', 'FORBIDDEN'];
 
@@ -93,7 +106,15 @@ async function toApiError(response: Response): Promise<ApiError> {
     // Non-JSON error body — keep the defaults.
   }
 
-  return new ApiError(message, response.status, code);
+  const header = response.headers.get('Retry-After');
+  const retryAfter = header === null ? null : Number.parseInt(header, 10);
+
+  return new ApiError(
+    message,
+    response.status,
+    code,
+    retryAfter !== null && Number.isFinite(retryAfter) ? retryAfter : null,
+  );
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {

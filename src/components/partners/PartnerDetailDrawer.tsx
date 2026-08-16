@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
 import { useCan } from '@/hooks/useCan';
 import { ApiError, partnersApi, walletsApi } from '@/lib/api';
-import { DOCUMENT_STATUS, PARTNER_STATUS } from '@/lib/constants';
+import { DOCUMENT_STATUS, PARTNER_STATUS, VALUE_ONLY_DOCUMENT_KINDS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatPercent, formatPhone, formatSAR } from '@/lib/utils/format';
 import type { ID, Partner, PartnerDetail, PartnerDocument, PartnerWallet } from '@/types';
@@ -35,6 +35,8 @@ export interface PartnerDetailDrawerProps {
   onRevokeVerification: (partner: Partner) => void;
   /** Active partner: suspend with a required reason. */
   onSuspend: (partner: Partner) => void;
+  /** Suspended partner: lift it, clearing the stored reason in the same call. */
+  onReactivate: (partner: Partner) => void;
 }
 
 export function PartnerDetailDrawer({
@@ -45,6 +47,7 @@ export function PartnerDetailDrawer({
   onVerify,
   onRevokeVerification,
   onSuspend,
+  onReactivate,
 }: PartnerDetailDrawerProps) {
   const t = useT();
   const { can } = useCan();
@@ -82,6 +85,23 @@ export function PartnerDetailDrawer({
   }, [partnerId, reloadToken]);
 
   const openDoc = detail?.documents.find((document) => document.id === openDocId) ?? null;
+
+  /*
+   * Two independent facts, each owned by the side that can establish it:
+   *
+   * - `documentsComplete` (theirs) — has the partner submitted everything required? The
+   *   required set differs by partner type and is a column-level fact we cannot see.
+   * - `allVerified` (ours) — has every document been reviewed? A pure fold over statuses
+   *   they already send.
+   *
+   * Folding this was unsafe until the backend dropped its derived default, which turned
+   * every row green the moment a partner was approved. Since 2026-08-16 `verified` means
+   * only that an admin checked that document, so the fold means what it says.
+   */
+  const allVerified = Boolean(
+    detail?.documents.length &&
+      detail.documents.every((document) => document.status === DOCUMENT_STATUS.VERIFIED),
+  );
 
   return (
     <Drawer open={Boolean(partnerId)} onOpenChange={onOpenChange}>
@@ -133,6 +153,23 @@ export function PartnerDetailDrawer({
                   </p>
                 </div>
               </div>
+
+              {/*
+                `suspensionReason` was recorded on every suspension since the endpoint was
+                written and surfaced nowhere — so an admin opening a suspended partner
+                could not see why, which is the one thing they opened the page for.
+              */}
+              {detail.status === PARTNER_STATUS.SUSPENDED && (
+                <p className="mx-5 mt-4 flex items-start gap-2.5 rounded-xl bg-status-amberSoft px-3.5 py-3 text-sm text-status-amber">
+                  <CircleX className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  <span>
+                    <span className="block font-semibold">{t.partners.suspendedTitle}</span>
+                    {detail.suspensionReason && (
+                      <span className="mt-0.5 block">{detail.suspensionReason}</span>
+                    )}
+                  </span>
+                </p>
+              )}
 
               {detail.status === PARTNER_STATUS.REJECTED && detail.rejectionReason && (
                 <p className="mx-5 mt-4 flex items-start gap-2.5 rounded-xl bg-status-redSoft px-3.5 py-3 text-sm text-status-red">
@@ -198,15 +235,25 @@ export function PartnerDetailDrawer({
               </DrawerSection>
 
               <DrawerSection title={t.partners.documents}>
+                {/* Submission and review are separate questions and a reviewer needs both:
+                    everything can be on file and unread, or reviewed but incomplete. */}
                 <p
                   className={cn(
-                    'mb-2 text-xs font-medium',
+                    'text-xs font-medium',
                     detail.documentsComplete ? 'text-status-green' : 'text-status-amber',
                   )}
                 >
                   {detail.documentsComplete
                     ? t.partners.documentsComplete
                     : t.partners.documentsIncomplete}
+                </p>
+                <p
+                  className={cn(
+                    'mb-2 text-xs font-medium',
+                    allVerified ? 'text-status-green' : 'text-status-amber',
+                  )}
+                >
+                  {allVerified ? t.partners.documentsAllVerified : t.partners.documentsUnreviewed}
                 </p>
                 <ul className="space-y-2">
                   {detail.documents.map((document) => (
@@ -224,9 +271,11 @@ export function PartnerDetailDrawer({
                   ))}
                 </ul>
 
-                {openDoc && (
+                {/* Only file-backed rows are expandable, so this never renders empty. */}
+                {openDoc?.fileUrl && (
                   <PdfViewer url={openDoc.fileUrl} title={openDoc.label} className="mt-3" />
                 )}
+
               </DrawerSection>
             </DrawerBody>
 
@@ -240,6 +289,18 @@ export function PartnerDetailDrawer({
                 </Button>
                 <Button variant="destructive" className="flex-1" onClick={() => onReject(detail)}>
                   {t.partners.reject}
+                </Button>
+              </DrawerFooter>
+            )}
+            {/*
+              A suspension is now reversible from the screen that caused it, and the same
+              call clears the stored reason — which `PATCH /admin/users/{id}/status` does
+              not, so reactivating from the users screen leaves a stale reason behind.
+            */}
+            {canManage && detail.status === PARTNER_STATUS.SUSPENDED && (
+              <DrawerFooter>
+                <Button variant="success" className="flex-1" onClick={() => onReactivate(detail)}>
+                  {t.partners.reactivate}
                 </Button>
               </DrawerFooter>
             )}
@@ -289,6 +350,10 @@ function DocumentRow({
   const t = useT();
   const [verifying, setVerifying] = useState(false);
 
+  const hasFile = Boolean(document.fileUrl);
+  /** A number the partner typed, not a scan — the backend has no column to store one. */
+  const valueOnly = (VALUE_ONLY_DOCUMENT_KINDS as readonly string[]).includes(document.kind);
+
   async function handleVerify() {
     setVerifying(true);
     try {
@@ -299,28 +364,55 @@ function DocumentRow({
     }
   }
 
+  /*
+   * Three states, not two: a scan on file, a scan the partner never uploaded (amber —
+   * a reviewer's finding), and a kind that can never have one (quiet grey — a fact).
+   */
+  const body = (
+    <>
+      <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-slate-800">{document.label}</span>
+        {document.value && (
+          <LtrText className="block truncate text-xs text-slate-400">{document.value}</LtrText>
+        )}
+        {!hasFile && (
+          <span
+            className={cn(
+              'block truncate text-xs',
+              valueOnly ? 'text-slate-400' : 'text-status-amber',
+            )}
+          >
+            {valueOnly ? t.partners.documentsValueOnly : t.partners.documentsNotUploaded}
+          </span>
+        )}
+      </span>
+    </>
+  );
+
   return (
     <li
       className={cn(
         'flex items-center gap-3 rounded-xl bg-surface-page px-3.5 py-3 transition-colors',
-        'hover:bg-surface-muted',
+        hasFile && 'hover:bg-surface-muted',
         open && 'ring-1 ring-brand/30',
       )}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-      >
-        <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-slate-800">{document.label}</span>
-          {document.value && (
-            <LtrText className="block truncate text-xs text-slate-400">{document.value}</LtrText>
-          )}
-        </span>
-      </button>
+      {/* Only a row with a file behind it is a button. Opening a viewer that can only
+          ever say "No file attached" invites the reader to conclude the partner failed
+          to upload something, which for a value-only kind is not true. */}
+      {hasFile ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-3 text-start">{body}</div>
+      )}
       <StatusBadge status={document.status} dot={false} className="shrink-0" />
       {canVerify && document.status === DOCUMENT_STATUS.PENDING_REVIEW && (
         <Button

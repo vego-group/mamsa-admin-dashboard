@@ -24,6 +24,16 @@ export interface Paginated<T> {
   total: number;
   page: number;
   pageSize: number;
+  /**
+   * The sort the API **actually applied**, echoed back. `null` means the requested
+   * `sortBy` was not recognised and the default order was returned; absent means the
+   * endpoint predates the echo (or is the mock) and cannot tell us either way.
+   *
+   * Read it through `appliedSort()` rather than directly — an unrecognised sort is
+   * otherwise indistinguishable from one that worked.
+   */
+  sortBy?: string | null;
+  sortDir?: 'asc' | 'desc' | null;
 }
 
 export interface ListParams {
@@ -186,6 +196,15 @@ export interface PartnerDetail extends Partner {
   partnerEarning: number;
   avgPerBooking: number;
   rejectionReason: string | null;
+  /**
+   * Why the partner was suspended. Recorded on every suspension since the endpoint was
+   * written, and surfaced nowhere until now — which left an admin opening a suspended
+   * profile unable to see the one thing they opened it for.
+   *
+   * `POST /admin/partners/{id}/reactivate` clears it; `PATCH /admin/users/{id}/status`
+   * does not, which is why reactivating from the users screen leaves a stale reason.
+   */
+  suspensionReason?: string | null;
 }
 
 export interface PartnerListParams extends ListParams {
@@ -224,11 +243,20 @@ export type WalletIneligibleReason =
   | 'already_paid_this_month';
 
 export interface BankDetails {
+  /** FULL iban — admin surface only. The partner's own app only ever sees `••••7519`. */
   iban: string;
   accountHolderName: string;
+  /** Derived from the IBAN's SAMA bank code; `null` for an unrecognised one. */
   bankName: string | null;
   verified: boolean;
   verifiedAt: ISODate | null;
+  /**
+   * Which admin approved this destination. `null` on records that predate the field.
+   *
+   * It exists because a disputed transfer has to be able to name who approved where the
+   * money went — so it is shown, not just stored.
+   */
+  verifiedBy: string | null;
   rejectionReason: string | null;
   updatedAt: ISODate | null;
 }
@@ -277,6 +305,20 @@ export interface PartnerWalletDetail extends PartnerWallet {
   recentPayouts: Payout[];
 }
 
+/**
+ * `GET /admin/wallets/stats`. Computed by the same eligibility service as
+ * `/admin/payouts/ineligible`, and `eligibleAmount` by the same `payable()` the run pays
+ * from — so these tiles cannot disagree with the payout screen.
+ *
+ * **The eight counts partition the partner base exactly:**
+ *
+ *     eligibleCount + belowMinimumCount + bankUnverifiedCount + bankMissingCount
+ *       + negativeBalanceCount + alreadyPaidCount + suspendedCount
+ *       + nothingPayableCount === partnersCount
+ *
+ * That is why the last three exist. Without them the row does not sum, and a row of
+ * counts that does not add up to the total is one an accountant stops trusting on sight.
+ */
 export interface WalletStats {
   totalAvailable: number;
   totalPending: number;
@@ -286,6 +328,19 @@ export interface WalletStats {
   bankUnverifiedCount: number;
   bankMissingCount: number;
   negativeBalanceCount: number;
+  /** Done for the cycle — a success state, never styled as a problem. */
+  alreadyPaidCount: number;
+  suspendedCount: number;
+  /**
+   * Payable on balance, but with no unpaid finished stay to attach the money to.
+   *
+   * `/admin/payouts/eligible` drops these, so the tiles must too — counting them as
+   * eligible would promise a row the run will never list.
+   */
+  nothingPayableCount: number;
+  partnersCount: number;
+  currency: 'SAR';
+  minimumPayout: number;
 }
 
 export type WalletEligibilityFilter = 'eligible' | 'ineligible' | 'all';
@@ -326,32 +381,53 @@ export interface LedgerListParams {
  * Declared here because `PartnerWalletDetail.recentPayouts` needs it. The payout
  * screens, endpoints and mutation rules belong to Phase 3.
  */
+/**
+ * A recorded transfer. One shape, served identically by `GET /admin/payouts` and by
+ * `recentPayouts` on the wallet detail — the backend builds both from the same function,
+ * so a single renderer covers both surfaces.
+ */
 export interface Payout {
   id: ID;
   reference: string;
   partnerId: ID;
   partnerName: string;
-  partnerType: PartnerType;
-  /** 'YYYY-MM', derived from paidAt in Riyadh time. */
+  /** The month **earned**, not the month paid. Label it or it reads as a bug. */
   periodMonth: string;
   amount: number;
   bookingsCount: number;
   currency: 'SAR';
-  iban: string;
-  bankName: string | null;
-  accountHolderName: string;
+  /** Only two states exist. A payout is recorded *after* the money moved. */
   status: PayoutStatus;
   paidAt: ISODate;
-  recordedByAdminId: ID;
-  recordedByAdminName: string;
+  /** The bank's own reference — what an accountant quotes on a support ticket. */
   bankReference: string;
+  /**
+   * `••••7519`. Masked even here: a payout record needs to identify its destination when
+   * a payment is disputed, which the last four digits do without carrying a full IBAN
+   * into a list, a CSV export and a browser cache.
+   */
+  ibanMasked: string;
+  bankName: string | null;
   note: string | null;
-  reversedAt: ISODate | null;
-  reversedByAdminId: ID | null;
-  reversalReason: string | null;
-  notifiedAt: ISODate | null;
-  /** True for off-cycle payouts recorded by a superadmin. */
-  isManual: boolean;
+  /**
+   * Reversal detail. Absent from the documented row shape but rendered where present —
+   * a reversal is written by an operator command, never by this app, so the data can
+   * arrive without anything here having caused it.
+   */
+  reversedAt?: ISODate | null;
+  reversalReason?: string | null;
+}
+
+/**
+ * `GET /admin/payouts`. The two totals cover the **whole filter, not the page** — closing
+ * a month is the only reason this endpoint exists, and a per-page total would be a trap.
+ *
+ * `totalAmount` excludes reversed rows because that money came back; `items` still
+ * contains them. The list and the total answer different questions on purpose.
+ */
+export interface PayoutPage extends Paginated<Payout> {
+  totalAmount: number;
+  totalBookingsCount: number;
 }
 
 export interface EligiblePartner {
@@ -415,13 +491,16 @@ export interface PayoutStats {
 }
 
 export interface PayoutListParams extends ListParams {
-  q?: string;
-  status?: PayoutStatus | 'all';
+  /**
+   * `YYYY-MM`. A malformed value is a `422`, not an empty list — `2026-7` matching
+   * nothing would render as "we paid nobody in July", and a wrong answer to a
+   * reconciliation question is worse than an error.
+   */
   periodMonth?: string;
   partnerId?: ID;
-  from?: ISODate;
-  to?: ISODate;
-  sort?: string;
+  status?: PayoutStatus | 'all';
+  /** `paidAt` (default, descending), `amount` or `periodMonth`. */
+  sortBy?: 'paidAt' | 'amount' | 'periodMonth';
 }
 
 export interface RecordPayoutInput {
@@ -775,25 +854,56 @@ export interface ReportsSummary {
   totalRevenue: number;
   totalCommission: number;
   /**
-   * Financial block — **optional on purpose**. Production still returns the old shape
-   * until the coordinated cutover, so any of these can be absent at runtime and the UI
-   * must render an empty state rather than a zero. A zero here reads as "no VAT was
-   * collected", which is a different and much worse claim than "not reported yet".
+   * Financial block — **optional on purpose**. Any of these can be absent at runtime and
+   * the UI must render an empty state rather than a zero. A zero here reads as "no VAT
+   * was collected", which is a different and much worse claim than "not reported yet".
    *
-   * `netRevenue` and `vatCollected` ship from `/admin/reports/summary` (staging first);
-   * the backend derives both as `total − taxes`, so the names and the
-   * `netRevenue + vatCollected === totalRevenue` invariant survive the VAT-inclusive
-   * flip with no rewiring here.
+   * ⚠️ **Two endpoints, two vocabularies.** `/admin/reports/summary` (ours) and
+   * `/reports/summary` (partner dashboard) share a path suffix and agree on almost
+   * nothing else:
    *
-   * The partner dashboard calls its equivalent field `vat`. Deliberately NOT normalised
-   * — each surface follows its own contract section.
+   * | | admin (ours) | partner |
+   * |---|---|---|
+   * | gross | `totalRevenue` | `grossRevenue` |
+   * | VAT | `vatCollected` | `vat` |
+   * | commission | `totalCommission` | `commission` |
+   * | fees | `fees` *(since 2026-08-16)* | `fees` |
+   * | partner money | — absent | `netProfit` |
    *
-   * `partnersShare` / `payoutsPaid` / `payoutsPending` are mock-only so far; no backend
-   * ships them yet.
+   * This distinction was documented here, then deleted on a backend correction that
+   * turned out to describe the *partner* endpoint — and the deletion was wrong. It is
+   * restored, with the table, because the next person to "tidy" it needs the evidence.
+   * `normalizeReportsSummary` accepts both sets so neither reading can blank a tile.
    */
   netRevenue?: number;
+  /**
+   * VAT held for ZATCA. **`vatCollected` on this endpoint** — `vat` is the partner
+   * dashboard's name for it and is accepted only as a fallback.
+   */
   vatCollected?: number;
+  /**
+   * Abolished service and cleaning fees, carried by pre-conversion bookings only.
+   *
+   * Live on the admin endpoint since **2026-08-16**, when `/admin/reports/summary` moved
+   * off `gross − taxes` and onto the frozen `subtotal` column — the last surface still on
+   * the derived basis. `netRevenue` dropped by exactly this amount on legacy ranges
+   * (32,056.00 on staging; production is a no-op, it has no revenue bookings yet).
+   *
+   * `0` on every modern range, and the line is **hidden when zero or absent**. It exists
+   * because without it `netRevenue + vatCollected` does not reach `totalRevenue` on a
+   * legacy range, and a reader closing that gap with tax alone infers a ~19.6% VAT rate.
+   */
+  fees?: number;
+  /**
+   * What the partners are owed out of the net base, after the platform's commission.
+   *
+   * ⚠️ The partner endpoint calls this **`netProfit`**, and on an admin screen that name
+   * would be a 49× overstatement of what Mamsa earned — it is `SUM(partner_share)`, money
+   * owed *to* partners. Absent from the admin payload today; normalised onto this name if
+   * it ever appears, so the label on screen stays honest either way.
+   */
   partnersShare?: number;
+  /** Mock-only so far; no backend ships these yet. */
   payoutsPaid?: number;
   payoutsPending?: number;
   totalBookings: number;
@@ -813,6 +923,30 @@ export interface ReportsSummary {
     revenue: number;
     commission: number;
   }>;
+}
+
+/**
+ * What `/admin/reports/summary` puts on the wire, plus the partner endpoint's names as
+ * accepted fallbacks.
+ *
+ * The admin surface emits `totalRevenue` / `totalCommission` / `vatCollected` and has
+ * always done so. The partner surface emits `grossRevenue` / `commission` / `vat` /
+ * `fees` / `netProfit`. Accepting both costs one `??` per field and makes the screen
+ * immune to a mix-up that has now happened twice in one review round — in both
+ * directions.
+ */
+export interface ReportsSummaryResponse
+  extends Omit<ReportsSummary, 'totalRevenue' | 'totalCommission'> {
+  totalRevenue?: number;
+  totalCommission?: number;
+  /** Partner-endpoint name for `totalRevenue`. */
+  grossRevenue?: number;
+  /** Partner-endpoint name for `totalCommission`. */
+  commission?: number;
+  /** Partner-endpoint name for `vatCollected`. */
+  vat?: number;
+  /** ⚠️ Partner-endpoint name, and a misleading one — see `ReportsSummary.partnersShare`. */
+  netProfit?: number;
 }
 
 export type ReportRange = '6m' | '1y' | 'all';

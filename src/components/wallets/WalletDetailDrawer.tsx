@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Banknote, Check, Copy, ExternalLink } from 'lucide-react';
+import { Banknote, Check, CircleX, Copy, ExternalLink } from 'lucide-react';
 import { Avatar, ConfirmDialog, ErrorState, LtrText, RichText, StatusBadge } from '@/components/common';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,12 +16,11 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
 import { useCan } from '@/hooks/useCan';
-import { ApiError, partnersApi, walletsApi } from '@/lib/api';
+import { ApiError, walletsApi } from '@/lib/api';
 import { PAYOUT_MIN_BALANCE } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatSAR } from '@/lib/utils/format';
 import type { ID, PartnerLedgerEntry, PartnerWalletDetail } from '@/types';
-import { AdjustBalanceDialog } from './AdjustBalanceDialog';
 
 export interface WalletDetailDrawerProps {
   partnerId: ID | null;
@@ -38,14 +37,17 @@ export function WalletDetailDrawer({
 }: WalletDetailDrawerProps) {
   const t = useT();
   const { can } = useCan();
-  const canManageBank = can('partners.manage');
-  const canAdjust = can('wallets.adjust');
+  /**
+   * `wallets.adjust`, not `partners.manage`. Finance holds `payouts.execute` and moves
+   * the money; approving *where* it may go is deliberately a superadmin act, so that one
+   * compromised finance session cannot point a payout at its own account and then pay it.
+   */
+  const canManageBank = can('wallets.adjust');
 
   const [detail, setDetail] = useState<PartnerWalletDetail | null>(null);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const [bankAction, setBankAction] = useState<BankAction>(null);
-  const [adjusting, setAdjusting] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
@@ -166,15 +168,56 @@ export function WalletDetailDrawer({
                       <dt className="text-sm text-slate-700">{t.wallets.bankStatus}</dt>
                       <dd>
                         <StatusBadge
-                          status={detail.bankDetails.verified ? 'verified' : 'pending_review'}
+                          status={
+                            detail.bankDetails.verified
+                              ? 'verified'
+                              : detail.bankDetails.rejectionReason
+                                ? 'rejected'
+                                : 'pending_review'
+                          }
                           dot={false}
                         />
                       </dd>
                     </div>
+
+                    {/*
+                      The audit trail for a destination real money was sent to. A disputed
+                      transfer has to be able to name who approved it, which is the only
+                      reason `verifiedBy` exists — so it is rendered, not merely stored.
+                    */}
+                    {detail.bankDetails.verified && (
+                      <BankRow
+                        label={t.bank.verifiedBy}
+                        value={
+                          detail.bankDetails.verifiedBy ??
+                          (detail.bankDetails.verifiedAt ? t.bank.verifiedByUnknown : '—')
+                        }
+                        hint={
+                          detail.bankDetails.verifiedAt
+                            ? formatDate(detail.bankDetails.verifiedAt)
+                            : undefined
+                        }
+                      />
+                    )}
                   </dl>
                 ) : (
                   <p className="rounded-xl bg-surface-muted px-3.5 py-3 text-sm text-slate-600">
                     {t.bank.noAccount}
+                  </p>
+                )}
+
+                {/*
+                  A rejected account and an unreviewed one both read `verified: false`.
+                  Without this they look identical, and the reviewer cannot tell that the
+                  partner has already been told what to fix — nor what they were told.
+                */}
+                {detail.bankDetails?.rejectionReason && (
+                  <p className="mt-3 flex items-start gap-2.5 rounded-xl bg-status-redSoft px-3.5 py-3 text-sm text-status-red">
+                    <CircleX className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                    <span>
+                      <span className="block font-semibold">{t.bank.rejectedTitle}</span>
+                      <span className="mt-0.5 block">{detail.bankDetails.rejectionReason}</span>
+                    </span>
                   </p>
                 )}
               </DrawerSection>
@@ -214,37 +257,39 @@ export function WalletDetailDrawer({
               </DrawerSection>
             </DrawerBody>
 
-            {(canAdjust || (canManageBank && detail.bankDetails)) && (
+            {/*
+              Three renderings, not two. A verified account keeps its Reject control so a
+              destination can be revoked — without it, an account approved in error can
+              never be taken back out of the payout run from this screen.
+
+              No account at all gets no controls: there is nothing to decide on, and the
+              endpoints answer 404 for exactly that case.
+            */}
+            {canManageBank && detail.bankDetails && (
               <DrawerFooter>
-                {canManageBank && detail.bankDetails && !detail.bankDetails.verified && (
-                  <>
-                    <Button
-                      variant="success"
-                      className="flex-1"
-                      onClick={() => setBankAction('verify')}
-                    >
-                      {t.bank.verify}
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={() => setBankAction('reject')}
-                    >
-                      {t.bank.reject}
-                    </Button>
-                  </>
-                )}
-                {canAdjust && (
-                  <Button variant="secondary" className="flex-1" onClick={() => setAdjusting(true)}>
-                    {t.wallets.adjust}
+                {!detail.bankDetails.verified && (
+                  <Button
+                    variant="success"
+                    className="flex-1"
+                    onClick={() => setBankAction('verify')}
+                  >
+                    {t.bank.verify}
                   </Button>
                 )}
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => setBankAction('reject')}
+                >
+                  {detail.bankDetails.verified ? t.bank.revoke : t.bank.reject}
+                </Button>
               </DrawerFooter>
             )}
           </>
         )}
       </DrawerContent>
 
+      {/* Verifying is what admits the partner into the payout run, so it says so. */}
       <ConfirmDialog
         open={bankAction === 'verify'}
         onOpenChange={(open) => !open && setBankAction(null)}
@@ -253,34 +298,33 @@ export function WalletDetailDrawer({
         description={
           <RichText template={t.bank.verifyQuestion} values={{ name: detail?.partnerName ?? '' }} />
         }
+        impact={t.bank.verifyConsequence}
         confirmLabel={t.bank.verify}
-        onConfirm={() => runBankAction(() => partnersApi.verifyBank(detail!.partnerId))}
+        onConfirm={() => runBankAction(() => walletsApi.verifyBank(detail!.partnerId))}
       />
 
+      {/*
+        The reason reaches the partner verbatim and is the only channel telling them why
+        they are not being paid — so the field asks for what to fix, not for a note.
+
+        Rejecting an already-verified account revokes a destination and stops payouts;
+        that is a different act from turning down a fresh one, and it is labelled as one.
+      */}
       <ConfirmDialog
         open={bankAction === 'reject'}
         onOpenChange={(open) => !open && setBankAction(null)}
-        title={t.bank.rejectTitle}
+        title={detail?.bankDetails?.verified ? t.bank.revokeTitle : t.bank.rejectTitle}
         variant="destructive"
         description={
           <RichText template={t.bank.rejectQuestion} values={{ name: detail?.partnerName ?? '' }} />
         }
+        impact={detail?.bankDetails?.verified ? t.bank.revokeConsequence : undefined}
         requireReason
         reasonLabel={t.bank.rejectReason}
-        confirmLabel={t.bank.reject}
+        confirmLabel={detail?.bankDetails?.verified ? t.bank.revoke : t.bank.reject}
         onConfirm={({ reason }) =>
-          runBankAction(() => partnersApi.rejectBank(detail!.partnerId, reason ?? ''))
+          runBankAction(() => walletsApi.rejectBank(detail!.partnerId, reason ?? ''))
         }
-      />
-
-      <AdjustBalanceDialog
-        wallet={detail}
-        open={adjusting}
-        onOpenChange={setAdjusting}
-        onAdjusted={() => {
-          reload();
-          onChanged?.();
-        }}
       />
     </Drawer>
   );
@@ -359,10 +403,13 @@ function BankRow({
   label,
   value,
   copyable,
+  hint,
 }: {
   label: string;
   value: string;
   copyable?: boolean;
+  /** Secondary line under the value — the timestamp beside an approving admin's name. */
+  hint?: string;
 }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
@@ -378,7 +425,10 @@ function BankRow({
       <dt className="shrink-0 text-sm text-slate-700">{label}</dt>
       <dd className="flex min-w-0 items-center gap-2">
         {/* The full IBAN, never truncated: finance pastes it into a banking portal. */}
-        <LtrText className="truncate text-sm font-medium text-slate-900">{value}</LtrText>
+        <span className="min-w-0 text-end">
+          <LtrText className="block truncate text-sm font-medium text-slate-900">{value}</LtrText>
+          {hint && <LtrText className="block text-xs text-slate-400">{hint}</LtrText>}
+        </span>
         {copyable && (
           <button
             type="button"
@@ -399,6 +449,20 @@ function BankRow({
 }
 
 /**
+ * `before` is a **timestamp** cursor, not a row id.
+ *
+ * The wallet detail seeds this list from `recentLedger`, which carries no cursor of its
+ * own, so the first "load more" has to derive one — and the oldest row's `createdAt` is
+ * the only value the endpoint will accept. Seeding it with `id` (`led_51`) sent a cursor
+ * the server cannot parse, which returned the wrong window with no error to show for it.
+ *
+ * Every later page uses `nextCursor` verbatim, exactly as received.
+ */
+function cursorAfter(rows: PartnerLedgerEntry[]): string | null {
+  return rows.at(-1)?.createdAt ?? null;
+}
+
+/**
  * The ledger is cursor-paginated rather than paged: it only grows at the head, so a page
  * number would drift under the reader as new rows land. The detail response already
  * carries the newest rows, so the first page costs no extra request.
@@ -406,13 +470,13 @@ function BankRow({
 function LedgerSection({ partnerId, seed }: { partnerId: ID; seed: PartnerLedgerEntry[] }) {
   const t = useT();
   const [rows, setRows] = useState<PartnerLedgerEntry[]>(seed);
-  const [cursor, setCursor] = useState<string | null>(seed.at(-1)?.id ?? null);
+  const [cursor, setCursor] = useState<string | null>(cursorAfter(seed));
   const [exhausted, setExhausted] = useState(seed.length === 0);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     setRows(seed);
-    setCursor(seed.at(-1)?.id ?? null);
+    setCursor(cursorAfter(seed));
     setExhausted(seed.length === 0);
   }, [seed]);
 

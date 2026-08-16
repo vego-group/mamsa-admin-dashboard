@@ -316,6 +316,8 @@ function CancellationsPageContent() {
             />
 
             <div className="flex flex-1 items-center justify-end gap-2">
+              {/* A cancellation is a cancelled booking, so the same `BKG-####` identifier
+                  searches here — plus guest name, unit name and partner name. */}
               <SearchInput
                 value={search}
                 onChange={setSearch}

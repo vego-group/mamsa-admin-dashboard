@@ -31,8 +31,10 @@ export const en = {
     confirm: 'Confirm',
     save: 'Save changes',
     export: 'Export',
-    exportCsv: 'Export CSV',
-    exportPdf: 'Export PDF',
+    // Named for their real scope: the API clamps pageSize to 100, so "fetch it all and
+    // export" is not available and every export covers the rows on screen.
+    exportCsv: 'Export page (CSV)',
+    exportPdf: 'Print page (PDF)',
     viewAll: 'View all',
     loading: 'Loading…',
     noResults: 'Nothing to show yet',
@@ -61,6 +63,11 @@ export const en = {
     totalAvailable: 'Total Available',
     eligibleCount: 'Eligible for Payout',
     eligibleAmount: (amount: string) => `${amount} ready`,
+    pendingHint: (amount: string) => `${amount} pending`,
+    paidThisCycle: 'Paid this cycle',
+    ofPartners: (count: number) => `of ${count} partners`,
+    blockedCount: 'Blocked from payout',
+    belowMinimumHint: (count: number) => `${count} below the minimum`,
     belowMinimum: 'Below Minimum',
     missingBankDetails: 'Missing Bank Details',
     bankStatus: 'Bank Status',
@@ -120,10 +127,18 @@ export const en = {
     verify: 'Verify Account',
     verifyTitle: 'Verify this bank account',
     verifyQuestion: 'Confirm that the IBAN belongs to *{name}*?',
+    verifyConsequence: 'Once verified, the partner enters the payout run for their due amount.',
+    verifiedBy: 'Verified by',
+    verifiedByUnknown: 'Older record — approver not stored',
     reject: 'Reject Verification',
     rejectTitle: 'Reject this bank account',
     rejectQuestion: 'Reject the bank details of *{name}*?',
     rejectReason: 'Reason shown to the partner',
+    rejectedTitle: 'Why this account was rejected',
+    revoke: 'Revoke Verification',
+    revokeTitle: 'Revoke a verified account',
+    revokeConsequence:
+      'The partner leaves the payout run immediately and is paid nothing until the account is verified again.',
     copy: 'Copy',
     copied: 'Copied',
     noAccount: 'This partner has not added a bank account yet.',
@@ -148,6 +163,11 @@ export const en = {
     paid: 'Transferred',
     currentPeriod: 'Current month',
     record: 'Record Transfer',
+    recorded: 'Transfer recorded',
+    blocked: 'Blocked from payout',
+    statusHeader: 'Status',
+    forPeriod: (period: string) => `for ${period}`,
+    monthTotal: 'Transferred this month:',
     recordTitle: 'Record a bank transfer',
     copyTransferData: 'Copy transfer details',
     copied: 'Copied',
@@ -231,7 +251,12 @@ export const en = {
       attemptsLeft: 'attempts left',
       expired: 'This code has expired. Request a new one.',
       locked: 'Too many attempts. Try again in a few minutes.',
-      rateLimited: 'Too many requests. Please wait before retrying.',
+      // A 429 is raised by the framework's rate limiter before the app's handler, so it
+      // carries no `code` and an untranslated English message. `Retry-After` is the only
+      // trustworthy value on it — say the real number rather than "a few minutes".
+      rateLimited: (minutes: number) =>
+        `Too many requests. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      rateLimitedSoon: 'Too many requests. Try again shortly.',
       network: 'Network error. Check your connection and try again.',
       suspended: 'This admin account is suspended. Contact the platform owner.',
     },
@@ -249,16 +274,21 @@ export const en = {
     totalBookings: 'Total Bookings',
     activePartners: 'Active Partners',
     pendingRequests: 'Pending Requests',
-    monthlyGrowth: 'Monthly Growth',
+    monthlyGrowth: 'Booked Revenue Growth',
+    monthlyGrowthHint: 'This month so far vs all of last month · by booking date, not stay date',
+    deltaNewSignups: 'New signups this month so far, vs all of last month',
+    deltaNewBookings: 'New bookings this month so far, vs all of last month',
+    deltaNewPartners: 'New partners this month so far — not a change in the active count',
+    deltaEarnedThisMonth: 'Commission earned this month so far, vs all of last month',
     avgBookingValue: 'Avg Booking Value',
     revenueTitle: 'Revenue & Commission',
     revenueSubtitle: 'Monthly performance overview',
     revenue: 'Revenue',
     commission: 'Commission',
     bookingStatusTitle: 'Booking Status',
-    bookingStatusSubtitle: 'Distribution overview',
+    bookingStatusSubtitle: 'Distribution overview — all time',
     cityRevenueTitle: 'Revenue by City',
-    cityRevenueSubtitle: 'Top performing locations',
+    cityRevenueSubtitle: 'Top performing locations — all time',
     weeklyBookingsTitle: 'Weekly Bookings',
     weeklyBookingsSubtitle: 'Day-by-day booking volume',
     pendingTitle: 'Latest Pending Requests',
@@ -356,8 +386,17 @@ export const en = {
     performance: 'Performance',
     documents: 'Documents',
     verifyDocument: 'Verify Document',
-    documentsComplete: 'All required documents verified',
-    documentsIncomplete: 'Documents pending verification',
+    // `documentsComplete` measures whether the required *fields* are filled and the
+    // partner is KYC-approved — not whether documents were reviewed. It was captioned as
+    // a verification claim and contradicted the rows below it (backend reply §1.3).
+    documentsComplete: 'All required details submitted',
+    documentsIncomplete: 'Required details still missing',
+    // Derived from documents[].status. Separate from the line above: submitted and
+    // reviewed are different claims, and a reviewer needs to see both.
+    documentsAllVerified: 'Every document reviewed',
+    documentsUnreviewed: 'Some documents not reviewed yet',
+    documentsNotUploaded: 'Not uploaded',
+    documentsValueOnly: 'No scan on file — this record is a number, not a document',
     totalRevenueTile: 'Total Revenue',
     commissionPaid: 'Commission Paid',
     partnerEarning: 'Partner Earning',
@@ -380,6 +419,11 @@ export const en = {
     suspend: 'Suspend',
     suspendTitle: 'Suspend partner',
     suspendQuestion: 'Are you sure you want to *suspend* *{name}*?',
+    suspendedTitle: 'This partner is suspended',
+    reactivate: 'Reactivate Partner',
+    reactivateTitle: 'Reactivate a suspended partner',
+    reactivateQuestion:
+      'Reactivate *{name}*? The stored suspension reason is cleared and the partner resumes trading.',
     suspendConsequence:
       'The partner loses dashboard access and all their units are hidden from the public site.',
     reasonForPartner: 'Reason shown to the partner',
@@ -531,6 +575,12 @@ export const en = {
     add: 'Add Unit',
     addTitle: 'List a Mamsa-owned unit',
     addBody: 'It is created as a draft and goes through the same review as a partner listing.',
+    // The create endpoint takes these nine fields and nothing else — no images, amenities,
+    // description or permit — and there is no admin image upload anywhere in the console.
+    // A unit cannot pass review without photos, so without this warning the form quietly
+    // produces listings that can never be published.
+    addNoMediaWarning:
+      'This form cannot attach photos, amenities or a permit, and the console has no way to add them later. The unit will sit as an unpublishable draft until those are added elsewhere.',
     name: 'Unit name',
     district: 'District',
     price: 'Price per night',
@@ -543,7 +593,12 @@ export const en = {
     unpublish: 'Unpublish',
     unpublishTitle: 'Unpublish unit',
     unpublishQuestion: 'Are you sure you want to *unpublish* *{name}*?',
-    unpublishConsequence: 'The unit is taken off the public site immediately.',
+    // Not a soft "hide": the endpoint sets approval_status to `rejected` and stores the
+    // reason as the rejection reason, so the partner is told they were rejected and the
+    // unit re-enters the approvals queue. Naming that is the difference between an admin
+    // hiding a listing for a week and an admin rejecting a partner's property.
+    unpublishConsequence:
+      'The unit leaves the public site immediately and returns to the approvals queue as *rejected* — the partner sees your reason as a rejection.',
     unpublishReason: 'Reason for unpublishing',
   },
   cancellations: {
@@ -593,7 +648,8 @@ export const en = {
     partnerLoses: (rate: string) => `Partner loses (${rate})`,
     mamsaLoses: (rate: string) => `Mamsa loses (${rate})`,
     hostImpactNote: 'A host cancellation always refunds the guest in full.',
-    guestImpactNote: 'Refund computed from the policy tiers frozen at booking time.',
+    // Payment time — see the note on `policyCaptured`.
+    guestImpactNote: 'Refund computed from the policy tiers frozen at payment time.',
     appliedTier: 'Applied tier',
   },
   reports: {
@@ -614,6 +670,7 @@ export const en = {
     totalCommission: 'Total Commission',
     netRevenue: 'Net Revenue',
     vatCollected: 'VAT Collected',
+    legacyFees: 'Abolished service & cleaning fees (legacy bookings):',
     partnersShare: 'Partners’ Share',
     payoutsPaid: 'Payouts Transferred',
     payoutsPending: 'Awaiting Transfer',
@@ -741,7 +798,12 @@ export const en = {
     moyasarRef: 'Moyasar reference',
     timeline: 'Timeline',
     cancellationPolicy: 'Cancellation Policy',
-    policyCaptured: 'Policy as captured at booking time',
+    // Payment time, not booking time. `bookings.cancellation_snapshot` is written when
+    // the payment lands, and a booking exists in `pending_payment` before that — so the
+    // two are different moments. The caption dates a frozen policy an admin may have to
+    // defend in a refund dispute, which is exactly where naming the wrong moment costs
+    // something (backend reply part 2 §6.2).
+    policyCaptured: 'Policy as captured at payment time',
   },
   months: {
     Jan: 'Jan',

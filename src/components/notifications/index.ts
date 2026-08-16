@@ -1,2 +1,8 @@
-export { CATEGORY_ICON, CATEGORY_TONE, notificationHref } from './categories';
+export {
+  CATEGORY_ICON,
+  CATEGORY_TONE,
+  categoryIcon,
+  categoryTone,
+  notificationHref,
+} from './categories';
 export { NotificationBell } from './NotificationBell';

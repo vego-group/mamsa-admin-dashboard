@@ -42,29 +42,52 @@ export const endpoints = {
     revokeVerification: (id: string) => `/admin/partners/${id}/revoke-verification`,
     verifyDocument: (partnerId: string, documentId: string) =>
       `/admin/partners/${partnerId}/documents/${documentId}/verify`,
-    bankDetails: (id: string) => `/admin/partners/${id}/bank-details`,
-    verifyBank: (id: string) => `/admin/partners/${id}/bank-details/verify`,
-    rejectBank: (id: string) => `/admin/partners/${id}/bank-details/reject`,
+    /**
+     * Lifts a suspension AND clears the stored reason — which is the reason it exists,
+     * since `PATCH /admin/users/{id}/status` leaves a stale reason on the record.
+     *
+     * Only `approved + suspended → approved + active`. A `pending` partner is refused
+     * with 409: an invited partner who never finished KYC is also inactive, and a general
+     * "activate" would put them live without a review.
+     */
+    reactivate: (id: string) => `/admin/partners/${id}/reactivate`,
   },
   wallets: {
     list: '/admin/wallets',
+    /**
+     * Registered BEFORE `wallets/{partnerId}` server-side. It previously matched the
+     * detail route with `partnerId = "stats"` and answered NOT_FOUND *after* auth — alive
+     * to an unauthenticated probe, dead for a signed-in admin, silent in the console.
+     */
     stats: '/admin/wallets/stats',
     detail: (partnerId: string) => `/admin/wallets/${partnerId}`,
     // `/ledger`, not `/transactions` — the backend stubs are already built under this path.
     ledger: (partnerId: string) => `/admin/wallets/${partnerId}/ledger`,
-    adjust: (partnerId: string) => `/admin/wallets/${partnerId}/adjust`,
+    /**
+     * The bank account lives on the WALLET surface, not the partner one — verified
+     * against staging, where `/admin/partners/{id}/bank-details/verify` is a 404 and
+     * this path answers 405 to a GET (i.e. it exists, POST only).
+     *
+     * This is the switch that admits a partner into the payout run, so a wrong path
+     * here is why nothing is ever payable.
+     */
+    verifyBank: (partnerId: string) => `/admin/wallets/${partnerId}/bank/verify`,
+    rejectBank: (partnerId: string) => `/admin/wallets/${partnerId}/bank/reject`,
   },
+  /**
+   * Three endpoints, and only three. `/admin/payouts` (list), `/admin/payouts/stats`,
+   * `/admin/payouts/{id}`, `/manual`, `/{id}/reverse` and `/{id}/resend-notification`
+   * were built against Phase-3 stubs and are all 404 on staging and production.
+   *
+   * A reversal is an operator command (`php artisan payouts:reverse`), deliberately not
+   * an endpoint — see MAMSA-FRONTEND-ADMIN-PAYOUTS-SCREEN §7.2.
+   */
   payouts: {
     eligible: '/admin/payouts/eligible',
     ineligible: '/admin/payouts/ineligible',
-    list: '/admin/payouts',
-    stats: '/admin/payouts/stats',
-    detail: (id: string) => `/admin/payouts/${id}`,
     record: '/admin/payouts/record',
-    reverse: (id: string) => `/admin/payouts/${id}/reverse`,
-    resendNotification: (id: string) => `/admin/payouts/${id}/resend-notification`,
-    manual: '/admin/payouts/manual',
-    exportCsv: '/admin/payouts/export.csv',
+    /** Recorded transfers, for closing a month. There is still no `/{id}` detail route. */
+    list: '/admin/payouts',
   },
   units: {
     list: '/admin/units',
@@ -92,10 +115,13 @@ export const endpoints = {
     highRisk: '/admin/cancellations/high-risk-partners',
     retryRefund: (id: string) => `/admin/cancellations/${id}/retry-refund`,
   },
+  /**
+   * Summary only. `export.csv` and `export.pdf` were declared here and never called;
+   * both are 404 on staging and production, confirmed by the backend on 2026-08-16.
+   * Export is client-side over the loaded page until a server-side export exists.
+   */
   reports: {
     summary: '/admin/reports/summary',
-    exportCsv: '/admin/reports/export.csv',
-    exportPdf: '/admin/reports/export.pdf',
   },
   notifications: {
     list: '/admin/notifications',

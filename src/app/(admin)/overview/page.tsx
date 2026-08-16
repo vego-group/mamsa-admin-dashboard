@@ -187,30 +187,52 @@ function OverviewPageContent() {
     <div className="space-y-6">
       {header}
 
+      {/*
+        Every KPI here is a LIFETIME total; every delta beside it is THIS MONTH'S INFLOW.
+        They are different quantities, so each chip is captioned with the one it belongs
+        to — `+12%` beside "1,240 users" means 12% more signups than last month, not a
+        12% larger user base.
+
+        `activePartners` is the sharpest case: the figure is a stock (how many are active
+        right now) and the delta is a flow (how many joined), so a month that suspended
+        ten partners and gained five shows a POSITIVE chip above a FALLING number.
+
+        All four are `neutral` rather than colour-graded, because the comparison is
+        month-to-date against a *complete* previous month — structurally negative for most
+        of every month, fair only on the last day. See KpiCard.deltaTone.
+      */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label={t.dashboard.totalUsers}
           value={summary.totalUsers.toLocaleString('en-US')}
           icon={Users}
           delta={summary.deltas.totalUsers}
+          deltaLabel={t.dashboard.deltaNewSignups}
+          deltaTone="neutral"
         />
         <KpiCard
           label={t.dashboard.platformCommission}
           value={formatSAR(summary.platformCommission, { compact: true })}
           icon={TrendingUp}
           delta={summary.deltas.platformCommission}
+          deltaLabel={t.dashboard.deltaEarnedThisMonth}
+          deltaTone="neutral"
         />
         <KpiCard
           label={t.dashboard.totalBookings}
           value={summary.totalBookings.toLocaleString('en-US')}
           icon={CalendarDays}
           delta={summary.deltas.totalBookings}
+          deltaLabel={t.dashboard.deltaNewBookings}
+          deltaTone="neutral"
         />
         <KpiCard
           label={t.dashboard.activePartners}
           value={summary.activePartners.toLocaleString('en-US')}
           icon={Building2}
           delta={summary.deltas.activePartners}
+          deltaLabel={t.dashboard.deltaNewPartners}
+          deltaTone="neutral"
         />
         <KpiCard
           label={t.dashboard.netRevenue}
@@ -237,11 +259,20 @@ function OverviewPageContent() {
           icon={Clock}
           iconTone="amber"
         />
+        {/*
+          Gross revenue booked this month vs last, bucketed by when the booking was MADE,
+          not when the stay happens — so a booking taken in August for a December stay
+          counts here in August and in the partner report in December. The label has to
+          say "booked" or the two screens look like they disagree.
+
+          Same partial-month asymmetry as the deltas above, hence the plain tone.
+        */}
         <KpiCard
           label={t.dashboard.monthlyGrowth}
           value={formatPercent(summary.monthlyGrowth)}
+          hint={t.dashboard.monthlyGrowthHint}
           icon={TrendingUp}
-          iconTone="green"
+          iconTone="brand"
         />
         <KpiCard
           label={t.dashboard.avgBookingValue}

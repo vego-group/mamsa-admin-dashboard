@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Banknote, CalendarDays, Check, CircleCheck, Copy, Download, TrendingDown } from 'lucide-react';
+import Link from 'next/link';
+import { Banknote, Check, CircleCheck, Copy, Download, ExternalLink, TrendingDown } from 'lucide-react';
 import {
   Avatar,
   type Column,
@@ -15,30 +16,33 @@ import {
   StatusBadge,
 } from '@/components/common';
 import { RequirePermission } from '@/components/auth';
-import { ManualPayoutDialog } from '@/components/payouts/ManualPayoutDialog';
-import { PayoutDetailDrawer } from '@/components/payouts/PayoutDetailDrawer';
 import { RecordTransferDialog } from '@/components/payouts/RecordTransferDialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useT } from '@/i18n';
 import { useCan } from '@/hooks/useCan';
-import { ApiError, payoutsApi } from '@/lib/api';
+import { payoutsApi } from '@/lib/api';
 import { PAYOUT_MIN_BALANCE } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatDate, formatSAR } from '@/lib/utils/format';
-import type {
-  EligiblePartner,
-  ID,
-  IneligiblePartner,
-  Paginated,
-  Payout,
-  PayoutStats,
-} from '@/types';
+import type { EligiblePartner, IneligiblePartner, Payout, PayoutPage } from '@/types';
 
-const PAGE_SIZE = 10;
 const TABS = ['eligible', 'paid', 'ineligible'] as const;
+const PAGE_SIZE = 10;
 type Tab = (typeof TABS)[number];
+
+/**
+ * `YYYY-MM` in Riyadh. Computed rather than taken from an endpoint: the payout stats
+ * route that used to supply it does not exist, and the month is a calendar fact.
+ */
+const currentPeriodMonth = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Riyadh',
+  year: 'numeric',
+  month: '2-digit',
+})
+  .format(new Date())
+  .slice(0, 7);
 
 export default function PayoutsPage() {
   return (
@@ -49,24 +53,32 @@ export default function PayoutsPage() {
 }
 
 /**
- * The finance role's landing page. Everything needed to run a payout cycle lives here —
- * who is due, what was paid, and why someone is missing from the first list.
+ * The monthly payout run — a **reconciliation worksheet, not a checkout flow**.
+ *
+ * The accountant executes transfers in their own banking channel and comes here to record
+ * what they already did. Nothing on this screen moves money, which is why there is no
+ * amount input, no pending state and no reverse button.
+ *
+ * Exactly three endpoints exist: `eligible`, `ineligible` and `record`. A payout list, a
+ * stats endpoint and a payout detail were all built against Phase-3 stubs and answer 404
+ * on both environments — asking for them is what left this whole page on an error state,
+ * because a single rejected call in the batch took the two real lists down with it.
+ *
+ * The counters are therefore derived from the two lists this page already holds. They
+ * cannot disagree with the rows underneath them, which a separate endpoint could.
  */
 function PayoutsPageContent() {
   const t = useT();
   const { can } = useCan();
 
   const [tab, setTab] = useState<Tab>('eligible');
-  const [stats, setStats] = useState<PayoutStats | null>(null);
   const [eligible, setEligible] = useState<EligiblePartner[] | null>(null);
   const [ineligible, setIneligible] = useState<IneligiblePartner[] | null>(null);
-  const [paid, setPaid] = useState<Paginated<Payout> | null>(null);
+  const [paid, setPaid] = useState<PayoutPage | null>(null);
+  const [periodMonth, setPeriodMonth] = useState(currentPeriodMonth);
   const [page, setPage] = useState(1);
-  const [periodMonth, setPeriodMonth] = useState<string>('');
   const [error, setError] = useState(false);
   const [recording, setRecording] = useState<EligiblePartner | null>(null);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [inspecting, setInspecting] = useState<ID | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -76,14 +88,11 @@ function PayoutsPageContent() {
     let stale = false;
     setError(false);
 
-    void Promise.all([payoutsApi.stats(), payoutsApi.listEligible(), payoutsApi.listIneligible()])
-      .then(([statsResponse, eligibleResponse, ineligibleResponse]) => {
+    void Promise.all([payoutsApi.listEligible(), payoutsApi.listIneligible()])
+      .then(([eligibleResponse, ineligibleResponse]) => {
         if (stale) return;
-        setStats(statsResponse);
         setEligible(eligibleResponse);
         setIneligible(ineligibleResponse);
-        // The month picker defaults to the cycle currently being worked.
-        setPeriodMonth((current) => current || statsResponse.currentPeriodMonth);
       })
       .catch(() => !stale && setError(true));
 
@@ -92,20 +101,22 @@ function PayoutsPageContent() {
     };
   }, [reloadToken]);
 
+  // Only fetched when the tab is opened: closing a month is an occasional act, and the
+  // run itself is what this page is for.
   useEffect(() => {
-    if (!periodMonth) return;
+    if (tab !== 'paid') return;
 
     let stale = false;
     setPaid(null);
     payoutsApi
-      .list({ page, pageSize: PAGE_SIZE, periodMonth })
+      .list({ periodMonth, page, pageSize: PAGE_SIZE })
       .then((response) => !stale && setPaid(response))
       .catch(() => !stale && setError(true));
 
     return () => {
       stale = true;
     };
-  }, [periodMonth, page, reloadToken]);
+  }, [tab, periodMonth, page, reloadToken]);
 
   useEffect(() => setPage(1), [periodMonth]);
 
@@ -115,37 +126,33 @@ function PayoutsPageContent() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const periodOptions = useMemo(() => {
-    const months = new Set<string>();
-    if (stats) months.add(stats.currentPeriodMonth);
-    if (periodMonth) months.add(periodMonth);
-    for (const payout of paid?.items ?? []) months.add(payout.periodMonth);
-    // Six months back is as far as an accountant realistically reconciles.
-    if (stats) {
-      const [year, month] = stats.currentPeriodMonth.split('-').map(Number);
-      for (let back = 1; back <= 6; back += 1) {
-        const date = new Date(Date.UTC(year, month - 1 - back, 1));
-        months.add(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`);
-      }
-    }
-    return Array.from(months).sort().reverse();
-  }, [stats, periodMonth, paid]);
+  const totals = useMemo(() => {
+    const rows = eligible ?? [];
+    // `already_paid_this_month` is the cycle's success state, so it is counted as one.
+    const paid = (ineligible ?? []).filter((row) => row.reason === 'already_paid_this_month');
+
+    return {
+      eligibleCount: rows.length,
+      eligibleAmount: rows.reduce((sum, row) => sum + row.amount, 0),
+      paidCount: paid.length,
+      blockedCount: (ineligible ?? []).length - paid.length,
+    };
+  }, [eligible, ineligible]);
 
   function exportCsv() {
-    if (!paid) return;
-    const csv = toCsv(paid.items, [
-      { header: 'Reference', value: (row) => row.reference },
+    if (!eligible?.length) return;
+    const csv = toCsv(eligible, [
       { header: 'Partner', value: (row) => row.partnerName },
-      { header: 'Period', value: (row) => row.periodMonth },
+      { header: 'Type', value: (row) => row.partnerType },
       { header: 'Amount (SAR)', value: (row) => row.amount },
       { header: 'Bookings', value: (row) => row.bookingsCount },
       { header: 'IBAN', value: (row) => row.iban },
-      { header: 'Bank reference', value: (row) => row.bankReference },
-      { header: 'Paid at', value: (row) => formatDate(row.paidAt) },
-      { header: 'Recorded by', value: (row) => row.recordedByAdminName },
-      { header: 'Status', value: (row) => row.status },
+      { header: 'Account holder', value: (row) => row.accountHolderName },
+      { header: 'Bank', value: (row) => row.bankName ?? '' },
+      { header: 'Last paid', value: (row) => (row.lastPaidAt ? formatDate(row.lastPaidAt) : '') },
+      { header: 'Last period', value: (row) => row.lastPaidPeriod ?? '' },
     ]);
-    downloadCsv(`mamsa-payouts-${periodMonth}.csv`, csv);
+    downloadCsv('mamsa-payout-run.csv', csv);
   }
 
   const eligibleColumns: Array<Column<EligiblePartner>> = useMemo(
@@ -167,37 +174,47 @@ function PayoutsPageContent() {
       {
         key: 'amount',
         header: t.payouts.amount,
-        width: '12%',
+        width: '14%',
+        // Server-computed and authoritative — this is exactly what will be paid.
         cell: (row) => (
-          <span className="font-semibold tabular-nums text-slate-900">{formatSAR(row.amount)}</span>
+          <span className="block">
+            <span className="block font-semibold tabular-nums text-slate-900">
+              {formatSAR(row.amount)}
+            </span>
+            <span className="block text-xs text-slate-400">
+              {t.payouts.bookingsWithCount(row.bookingsCount)}
+            </span>
+          </span>
         ),
-      },
-      {
-        key: 'bookingsCount',
-        header: t.payouts.bookingsCount,
-        width: '9%',
-        cell: (row) => <span className="tabular-nums text-slate-600">{row.bookingsCount}</span>,
       },
       {
         key: 'iban',
         header: t.payouts.iban,
-        width: '25%',
-        // Full, never truncated: this is about to be pasted into a banking portal.
-        cell: (row) => <LtrText className="text-xs text-slate-700">{row.iban}</LtrText>,
-      },
-      {
-        key: 'accountHolderName',
-        header: t.payouts.accountHolder,
-        width: '16%',
-        cell: (row) => <span className="truncate text-slate-600">{row.accountHolderName}</span>,
+        width: '28%',
+        // Full, never truncated: this is about to be pasted into a banking portal, and a
+        // transcription error here sends real money to the wrong account.
+        cell: (row) => (
+          <span className="block">
+            <LtrText className="block text-xs text-slate-700">{row.iban}</LtrText>
+            <span className="block truncate text-xs text-slate-400">
+              {row.accountHolderName}
+              {row.bankName ? ` · ${row.bankName}` : ''}
+            </span>
+          </span>
+        ),
       },
       {
         key: 'lastPaidAt',
         header: t.payouts.lastPaid,
-        width: '10%',
+        width: '13%',
         cell: (row) =>
           row.lastPaidAt ? (
-            <LtrText className="text-slate-500">{formatDate(row.lastPaidAt)}</LtrText>
+            <span className="block">
+              <LtrText className="block text-slate-500">{formatDate(row.lastPaidAt)}</LtrText>
+              {row.lastPaidPeriod && (
+                <LtrText className="block text-xs text-slate-400">{row.lastPaidPeriod}</LtrText>
+              )}
+            </span>
           ) : (
             <span className="text-slate-300">—</span>
           ),
@@ -226,9 +243,15 @@ function PayoutsPageContent() {
       {
         key: 'reference',
         header: t.payouts.reference,
-        width: '17%',
+        width: '18%',
         cell: (row) => (
-          <LtrText className="font-semibold text-slate-900">{row.reference}</LtrText>
+          <span className="block">
+            <LtrText className="block font-semibold text-slate-900">{row.reference}</LtrText>
+            {/* The month EARNED, not the month paid — unlabelled it reads as a bug. */}
+            <LtrText className="block text-xs text-slate-400">
+              {t.payouts.forPeriod(row.periodMonth)}
+            </LtrText>
+          </span>
         ),
       },
       {
@@ -240,23 +263,38 @@ function PayoutsPageContent() {
       {
         key: 'amount',
         header: t.payouts.amount,
-        width: '13%',
+        width: '15%',
+        // Struck through when reversed: the money came back, and `totalAmount` below
+        // already excludes it, so the row must not read as part of the month's total.
         cell: (row) => (
-          <span
-            className={cn(
-              'font-semibold tabular-nums',
-              row.status === 'reversed' ? 'text-slate-400 line-through' : 'text-slate-900',
-            )}
-          >
-            {formatSAR(row.amount)}
+          <span className="block">
+            <span
+              className={cn(
+                'block font-semibold tabular-nums',
+                row.status === 'reversed' ? 'text-slate-400 line-through' : 'text-slate-900',
+              )}
+            >
+              {formatSAR(row.amount)}
+            </span>
+            <span className="block text-xs text-slate-400">
+              {t.payouts.bookingsWithCount(row.bookingsCount)}
+            </span>
           </span>
         ),
       },
       {
         key: 'bankReference',
         header: t.payouts.bankReference,
-        width: '15%',
-        cell: (row) => <LtrText className="text-xs text-slate-500">{row.bankReference}</LtrText>,
+        width: '20%',
+        cell: (row) => (
+          <span className="block">
+            <LtrText className="block text-xs text-slate-600">{row.bankReference}</LtrText>
+            <LtrText className="block text-xs text-slate-400">
+              {row.ibanMasked}
+              {row.bankName ? ` · ${row.bankName}` : ''}
+            </LtrText>
+          </span>
+        ),
       },
       {
         key: 'paidAt',
@@ -265,16 +303,18 @@ function PayoutsPageContent() {
         cell: (row) => <LtrText className="text-slate-500">{formatDate(row.paidAt)}</LtrText>,
       },
       {
-        key: 'recordedByAdminName',
-        header: t.payouts.recordedBy,
-        width: '13%',
-        cell: (row) => <span className="truncate text-slate-600">{row.recordedByAdminName}</span>,
-      },
-      {
         key: 'status',
-        header: t.common.confirm,
+        header: t.payouts.statusHeader,
         align: 'end',
-        cell: (row) => <StatusBadge status={row.status} />,
+        cell: (row) => (
+          <span className="inline-flex flex-col items-end gap-1">
+            <StatusBadge status={row.status} />
+            {/* Written by an operator command, never by this app — but it still arrives. */}
+            {row.status === 'reversed' && row.reversalReason && (
+              <span className="max-w-48 text-xs text-slate-400">{row.reversalReason}</span>
+            )}
+          </span>
+        ),
       },
     ],
     [t],
@@ -285,7 +325,7 @@ function PayoutsPageContent() {
       {
         key: 'partnerName',
         header: t.payouts.partner,
-        width: '28%',
+        width: '26%',
         cell: (row) => (
           <div className="flex items-center gap-3">
             <Avatar name={row.partnerName} size="sm" />
@@ -296,7 +336,7 @@ function PayoutsPageContent() {
       {
         key: 'availableBalance',
         header: t.wallets.availableBalance,
-        width: '16%',
+        width: '15%',
         cell: (row) => (
           <span
             className={cn(
@@ -313,12 +353,8 @@ function PayoutsPageContent() {
       {
         key: 'reason',
         header: t.common.reason,
-        width: '26%',
-        cell: (row) => (
-          <span className="inline-flex items-center rounded-lg bg-status-amberSoft px-2.5 py-1 text-xs font-semibold text-status-amber">
-            {t.wallets.ineligible[row.reason]}
-          </span>
-        ),
+        width: '30%',
+        cell: (row) => <IneligibleReason row={row} />,
       },
       {
         key: 'shortfall',
@@ -354,18 +390,10 @@ function PayoutsPageContent() {
         title={t.payouts.title}
         subtitle={t.payouts.subtitle}
         actions={
-          <>
-            <Button variant="secondary" onClick={exportCsv} disabled={!paid?.items.length}>
-              <Download className="h-4 w-4" />
-              {t.payouts.exportCsv}
-            </Button>
-            {can('payouts.manage') && (
-              <Button onClick={() => setManualOpen(true)}>
-                <Banknote className="h-4 w-4" />
-                {t.payouts.manual}
-              </Button>
-            )}
-          </>
+          <Button variant="secondary" onClick={exportCsv} disabled={!eligible?.length}>
+            <Download className="h-4 w-4" />
+            {t.payouts.exportCsv}
+          </Button>
         }
       />
 
@@ -375,33 +403,26 @@ function PayoutsPageContent() {
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <KpiCard
           label={t.payouts.eligible}
-          value={stats ? String(stats.eligibleCount) : '—'}
-          hint={stats ? formatSAR(stats.eligibleAmount, { compact: true }) : undefined}
+          value={eligible ? String(totals.eligibleCount) : '—'}
+          hint={eligible ? formatSAR(totals.eligibleAmount, { compact: true }) : undefined}
           icon={CircleCheck}
           iconTone="green"
         />
         <KpiCard
           label={t.payouts.paidThisMonth}
-          value={stats ? String(stats.paidThisMonthCount) : '—'}
-          hint={stats ? formatSAR(stats.paidThisMonthAmount, { compact: true }) : undefined}
+          value={ineligible ? String(totals.paidCount) : '—'}
+          hint={t.payouts.oncePerMonth}
           icon={Banknote}
           iconTone="blue"
         />
         <KpiCard
-          label={t.payouts.ineligible}
-          value={stats ? String(stats.ineligibleCount) : '—'}
+          label={t.payouts.blocked}
+          value={ineligible ? String(totals.blockedCount) : '—'}
           icon={TrendingDown}
           iconTone="amber"
-        />
-        <KpiCard
-          label={t.payouts.currentPeriod}
-          value={stats?.currentPeriodMonth ?? '—'}
-          hint={t.payouts.oncePerMonth}
-          icon={CalendarDays}
-          iconTone="brand"
         />
       </div>
 
@@ -413,24 +434,25 @@ function PayoutsPageContent() {
         />
 
         {tab === 'paid' && (
-          <select
-            value={periodMonth}
-            onChange={(event) => setPeriodMonth(event.target.value)}
-            aria-label={t.payouts.period}
-            dir="ltr"
-            className="h-10 rounded-xl border border-hairline bg-white px-3 text-sm tabular-nums text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-          >
-            {periodOptions.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            {t.payouts.period}
+            {/* A month input, not a free-text field: a malformed `periodMonth` is a 422,
+                deliberately, so that "2026-7" cannot render as "we paid nobody in July". */}
+            <input
+              type="month"
+              dir="ltr"
+              value={periodMonth}
+              max={currentPeriodMonth}
+              onChange={(event) => setPeriodMonth(event.target.value || currentPeriodMonth)}
+              className="h-10 rounded-xl border border-hairline bg-white px-3 text-sm tabular-nums text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+            />
+          </label>
         )}
       </div>
 
       {tab === 'eligible' &&
         (eligible && eligible.length === 0 ? (
+          // Outside a run window this is the NORMAL state, not a failure.
           <Card>
             <EmptyState
               title={t.payouts.noEligible}
@@ -462,17 +484,31 @@ function PayoutsPageContent() {
           loading={!paid && !error}
           error={error}
           onRetry={reload}
-          onRowClick={(row) => setInspecting(row.id)}
           emptyTitle={t.payouts.noPaid}
           footer={
-            paid &&
-            paid.total > paid.pageSize && (
-              <Pagination
-                page={paid.page}
-                pageSize={paid.pageSize}
-                total={paid.total}
-                onPageChange={setPage}
-              />
+            paid && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Covers the WHOLE month, not this page, and excludes reversed rows —
+                    which is the number an accountant closes the month against. */}
+                <p className="text-sm text-slate-600">
+                  {t.payouts.monthTotal}{' '}
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {formatSAR(paid.totalAmount)}
+                  </span>
+                  <span className="text-slate-400">
+                    {' · '}
+                    {t.payouts.bookingsWithCount(paid.totalBookingsCount)}
+                  </span>
+                </p>
+                {paid.total > paid.pageSize && (
+                  <Pagination
+                    page={paid.page}
+                    pageSize={paid.pageSize}
+                    total={paid.total}
+                    onPageChange={setPage}
+                  />
+                )}
+              </div>
             )
           }
         />
@@ -495,7 +531,9 @@ function PayoutsPageContent() {
         open={Boolean(recording)}
         onOpenChange={(open) => !open && setRecording(null)}
         onRecorded={(reference) => {
-          setNotice(`${t.payouts.record} · ${reference}`);
+          // The reference is what the accountant quotes in a support ticket and what the
+          // partner sees, so it is shown back rather than swallowed by a refresh.
+          setNotice(`${t.payouts.recorded} · ${reference}`);
           reload();
         }}
         onStale={(message) => {
@@ -503,15 +541,51 @@ function PayoutsPageContent() {
           reload();
         }}
       />
-
-      <ManualPayoutDialog open={manualOpen} onOpenChange={setManualOpen} onCreated={reload} />
-
-      <PayoutDetailDrawer
-        payoutId={inspecting}
-        onOpenChange={(open) => !open && setInspecting(null)}
-        onChanged={reload}
-      />
     </div>
+  );
+}
+
+/**
+ * `already_paid_this_month` is a **positive** outcome — the cycle is done for that
+ * partner. Colouring it amber next to `bank_missing` reads as six problems where there
+ * are five, so it gets the success treatment and its payout reference.
+ *
+ * `bank_unverified` is the only reason an admin can act on from here, so it is the only
+ * one that links out — to the wallet detail, where the verify control lives.
+ */
+function IneligibleReason({ row }: { row: IneligiblePartner }) {
+  const t = useT();
+
+  if (row.reason === 'already_paid_this_month') {
+    return (
+      <span className="inline-flex flex-col items-start gap-1">
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-status-greenSoft px-2.5 py-1 text-xs font-semibold text-status-green">
+          <Check className="h-3.5 w-3.5" aria-hidden />
+          {t.wallets.ineligible.already_paid_this_month}
+        </span>
+        {row.paidThisMonthReference && (
+          <LtrText className="text-xs text-slate-400">{row.paidThisMonthReference}</LtrText>
+        )}
+      </span>
+    );
+  }
+
+  if (row.reason === 'bank_unverified') {
+    return (
+      <Link
+        href={`/wallets?open=${row.partnerId}`}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-status-amberSoft px-2.5 py-1 text-xs font-semibold text-status-amber transition-colors hover:bg-status-amber hover:text-white"
+      >
+        {t.wallets.ineligible.bank_unverified}
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+      </Link>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center rounded-lg bg-status-amberSoft px-2.5 py-1 text-xs font-semibold text-status-amber">
+      {t.wallets.ineligible[row.reason]}
+    </span>
   );
 }
 

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banknote, CircleCheck, TrendingDown, Wallet } from 'lucide-react';
 import {
   Avatar,
+  KpiCard,
   type Column,
   DataTable,
-  KpiCard,
   LtrText,
   PageHeader,
   Pagination,
@@ -16,16 +16,10 @@ import {
 import { RequirePermission } from '@/components/auth';
 import { EligibilityChip, Money, WalletDetailDrawer } from '@/components/wallets/WalletDetailDrawer';
 import { useT } from '@/i18n';
+import { useDebounced } from '@/hooks/useDebounced';
 import { ApiError, walletsApi } from '@/lib/api';
-import { PARTNER_TYPE, PAYOUT_MIN_BALANCE, type PartnerType } from '@/lib/constants';
 import { formatSAR } from '@/lib/utils/format';
-import type {
-  ID,
-  Paginated,
-  PartnerWallet,
-  WalletEligibilityFilter,
-  WalletStats,
-} from '@/types';
+import type { ID, Paginated, PartnerWallet, WalletStats } from '@/types';
 
 const PAGE_SIZE = 8;
 
@@ -37,19 +31,27 @@ export default function WalletsPage() {
   );
 }
 
+/**
+ * Read-only by design: balances move through earnings and payouts, and nothing on this
+ * screen writes them. The only mutation reachable from here is bank verify/reject, which
+ * lives in the drawer behind `wallets.adjust`.
+ *
+ * The endpoint takes `page`, `pageSize`, `search`, `sortBy` and `sortDir` — nothing else.
+ * Type, eligibility and balance-range filters were sent for months and silently ignored,
+ * which is worse than not offering them: the operator narrows the list, the list does not
+ * narrow, and the screen looks broken rather than unsupported.
+ */
 function WalletsPageContent() {
   const t = useT();
 
-  const [type, setType] = useState<PartnerType | 'all'>('all');
-  const [eligibility, setEligibility] = useState<WalletEligibilityFilter>('all');
   const [search, setSearch] = useState('');
-  const [minBalance, setMinBalance] = useState('');
-  const [maxBalance, setMaxBalance] = useState('');
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<{ by: string; dir: 'asc' | 'desc' } | null>({
-    by: 'availableBalance',
-    dir: 'desc',
-  });
+  /**
+   * `partnerName` is the ONLY accepted sort. Defaulting to `availableBalance` asked for a
+   * sort the server drops on the floor, so the arrow said one thing and the rows another.
+   * Unsorted by default now — the server's own order (partner id ascending) is stable.
+   */
+  const [sort, setSort] = useState<{ by: string; dir: 'asc' | 'desc' } | null>(null);
 
   const [result, setResult] = useState<Paginated<PartnerWallet> | null>(null);
   const [stats, setStats] = useState<WalletStats | null>(null);
@@ -59,6 +61,9 @@ function WalletsPageContent() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
+
+  // The field stays responsive; only the query trails it.
+  const debouncedSearch = useDebounced(search);
 
   useEffect(() => {
     let stale = false;
@@ -70,11 +75,9 @@ function WalletsPageContent() {
       .list({
         page,
         pageSize: PAGE_SIZE,
-        q: search,
-        type,
-        eligibility,
-        minBalance: minBalance === '' ? undefined : Number(minBalance),
-        maxBalance: maxBalance === '' ? undefined : Number(maxBalance),
+        // `search`, not `q` — the param name the API actually reads. Under `q` the box
+        // typed, the request went out, and every partner came back regardless.
+        search: debouncedSearch,
         sortBy: sort?.by,
         sortDir: sort?.dir,
       })
@@ -88,12 +91,13 @@ function WalletsPageContent() {
     return () => {
       stale = true;
     };
-  }, [type, eligibility, search, minBalance, maxBalance, page, sort, reloadToken]);
+  }, [debouncedSearch, page, sort, reloadToken]);
 
   useEffect(() => {
     let stale = false;
     walletsApi
       .stats()
+      // Silent: the tiles read "—" and the table below is the page's actual job.
       .then((response) => !stale && setStats(response))
       .catch(() => undefined);
     return () => {
@@ -101,7 +105,7 @@ function WalletsPageContent() {
     };
   }, [reloadToken]);
 
-  useEffect(() => setPage(1), [type, eligibility, search, minBalance, maxBalance]);
+  useEffect(() => setPage(1), [debouncedSearch]);
 
   const columns: Array<Column<PartnerWallet>> = useMemo(
     () => [
@@ -109,6 +113,8 @@ function WalletsPageContent() {
         key: 'partnerName',
         header: t.wallets.partner,
         width: '24%',
+        // The one column the API can actually sort on.
+        sortable: true,
         cell: (row) => (
           <div className="flex items-center gap-3">
             <Avatar name={row.partnerName} size="sm" />
@@ -129,14 +135,12 @@ function WalletsPageContent() {
         key: 'availableBalance',
         header: t.wallets.availableBalance,
         width: '14%',
-        sortable: true,
         cell: (row) => <Money value={row.availableBalance} />,
       },
       {
         key: 'pendingBalance',
         header: t.wallets.pendingBalance,
         width: '13%',
-        sortable: true,
         cell: (row) => (
           <span className="tabular-nums text-slate-600">{formatSAR(row.pendingBalance)}</span>
         ),
@@ -145,7 +149,6 @@ function WalletsPageContent() {
         key: 'lifetimeEarnings',
         header: t.wallets.lifetimeEarnings,
         width: '13%',
-        sortable: true,
         cell: (row) => (
           <span className="tabular-nums text-slate-600">
             {formatSAR(row.lifetimeEarnings, { compact: true })}
@@ -188,32 +191,54 @@ function WalletsPageContent() {
         subtitle={t.wallets.subtitle(result?.total ?? 0)}
       />
 
+      {/*
+        Computed by the same eligibility service as the payout run, so these tiles cannot
+        disagree with what /payouts lists. The eight counts partition the partner base
+        exactly — `partnersCount` is rendered beside them so a reader can see that they
+        add up rather than take it on trust.
+      */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label={t.wallets.totalAvailable}
           value={stats ? formatSAR(stats.totalAvailable, { compact: true }) : '—'}
+          hint={stats ? t.wallets.pendingHint(formatSAR(stats.totalPending)) : undefined}
           icon={Wallet}
           iconTone="blue"
         />
         <KpiCard
           label={t.wallets.eligibleCount}
           value={stats ? String(stats.eligibleCount) : '—'}
-          hint={stats ? t.wallets.eligibleAmount(formatSAR(stats.eligibleAmount, { compact: true })) : undefined}
+          hint={
+            stats
+              ? t.wallets.eligibleAmount(formatSAR(stats.eligibleAmount, { compact: true }))
+              : undefined
+          }
           icon={CircleCheck}
           iconTone="green"
         />
+        {/* Done for the cycle — a success, so it does not sit under a warning icon. */}
         <KpiCard
-          label={t.wallets.belowMinimum}
-          value={stats ? String(stats.belowMinimumCount) : '—'}
-          hint={t.wallets.minimumNote(formatSAR(PAYOUT_MIN_BALANCE))}
-          icon={TrendingDown}
-          iconTone="amber"
+          label={t.wallets.paidThisCycle}
+          value={stats ? String(stats.alreadyPaidCount) : '—'}
+          hint={stats ? t.wallets.ofPartners(stats.partnersCount) : undefined}
+          icon={Banknote}
+          iconTone="brand"
         />
         <KpiCard
-          label={t.wallets.missingBankDetails}
-          value={stats ? String(stats.bankUnverifiedCount + stats.bankMissingCount) : '—'}
-          icon={Banknote}
-          iconTone="red"
+          label={t.wallets.blockedCount}
+          value={
+            stats
+              ? String(
+                  stats.bankMissingCount +
+                    stats.bankUnverifiedCount +
+                    stats.suspendedCount +
+                    stats.negativeBalanceCount,
+                )
+              : '—'
+          }
+          hint={stats ? t.wallets.belowMinimumHint(stats.belowMinimumCount) : undefined}
+          icon={TrendingDown}
+          iconTone="amber"
         />
       </div>
 
@@ -237,58 +262,13 @@ function WalletsPageContent() {
           )
         }
         header={
-          <div className="flex flex-wrap items-center gap-3">
-            <SearchInput
-              value={search}
-              onChange={setSearch}
-              placeholder={t.wallets.searchPlaceholder}
-              className="w-full max-w-xs"
-            />
-
-            <select
-              value={type}
-              onChange={(event) => setType(event.target.value as PartnerType | 'all')}
-              aria-label={t.wallets.allTypes}
-              className="h-10 rounded-xl border border-hairline bg-white px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-            >
-              <option value="all">{t.wallets.allTypes}</option>
-              {Object.values(PARTNER_TYPE).map((value) => (
-                <option key={value} value={value}>
-                  {t.status[value]}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={eligibility}
-              onChange={(event) => setEligibility(event.target.value as WalletEligibilityFilter)}
-              aria-label={t.wallets.allEligibility}
-              className="h-10 rounded-xl border border-hairline bg-white px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-            >
-              <option value="all">{t.wallets.allEligibility}</option>
-              <option value="eligible">{t.wallets.onlyEligible}</option>
-              <option value="ineligible">{t.wallets.onlyIneligible}</option>
-            </select>
-
-            <div dir="ltr" className="flex items-center gap-2">
-              <input
-                inputMode="numeric"
-                value={minBalance}
-                onChange={(event) => setMinBalance(event.target.value.replace(/[^\d-]/g, ''))}
-                placeholder={t.wallets.minBalance}
-                aria-label={t.wallets.minBalance}
-                className="h-10 w-28 rounded-xl border border-hairline bg-white px-3 text-sm tabular-nums text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-              />
-              <input
-                inputMode="numeric"
-                value={maxBalance}
-                onChange={(event) => setMaxBalance(event.target.value.replace(/[^\d-]/g, ''))}
-                placeholder={t.wallets.maxBalance}
-                aria-label={t.wallets.maxBalance}
-                className="h-10 w-28 rounded-xl border border-hairline bg-white px-3 text-sm tabular-nums text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-              />
-            </div>
-          </div>
+          // Search matches partner name or phone — the only filter the endpoint honours.
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={t.wallets.searchPlaceholder}
+            className="w-full max-w-xs"
+          />
         }
         footer={
           result &&

@@ -37,6 +37,7 @@ import { ACCOUNT_STATUS, SAUDI_CITIES } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatDate, formatSAR } from '@/lib/utils/format';
+import { appliedSort } from '@/lib/utils/sort';
 import type { ID, Paginated, User, UserStats } from '@/types';
 
 /** Eight rows is what the design fits above the pager. */
@@ -73,6 +74,9 @@ function UsersPageContent() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
+
+  /** The arrow follows what the API applied, not what we asked for. See appliedSort. */
+  const applied = appliedSort(result, sort);
 
   useEffect(() => {
     let stale = false;
@@ -293,8 +297,8 @@ function UsersPageContent() {
         onRetry={reload}
         onRowClick={(row) => setInspecting(row.id)}
         emptyTitle={t.users.empty}
-        sortBy={sort?.by}
-        sortDir={sort?.dir}
+        sortBy={applied.by}
+        sortDir={applied.dir}
         onSort={(key) =>
           setSort((current) =>
             current?.by === key

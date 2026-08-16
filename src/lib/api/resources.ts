@@ -8,7 +8,6 @@ import type {
   ApprovalStats,
   ApprovalStatsRange,
   ApprovalStatsResponse,
-  BankDetails,
   Booking,
   BookingDetail,
   BookingListParams,
@@ -32,13 +31,12 @@ import type {
   PartnerStats,
   PartnerWallet,
   PartnerWalletDetail,
-  Payout,
-  PayoutDetail,
   PayoutListParams,
-  PayoutStats,
+  PayoutPage,
   RecordPayoutInput,
   ReportRange,
   ReportsSummary,
+  ReportsSummaryResponse,
   Unit,
   UnitDetail,
   UnitDraft,
@@ -187,23 +185,14 @@ export const partnersApi = {
       ? mock.mockPartners.verifyDocument(partnerId, documentId)
       : request<Ok>(endpoints.partners.verifyDocument(partnerId, documentId), { method: 'POST' }),
 
-  bankDetails: (partnerId: ID) =>
+  /**
+   * Lifts a suspension and clears the stored reason in one call. 409s on a `pending`
+   * partner (never KYC-reviewed) and on one that is already active.
+   */
+  reactivate: (id: ID) =>
     USE_MOCK
-      ? mock.mockWallets.bankDetails(partnerId)
-      : request<BankDetails | null>(endpoints.partners.bankDetails(partnerId)),
-
-  verifyBank: (partnerId: ID) =>
-    USE_MOCK
-      ? mock.mockWallets.verifyBank(partnerId)
-      : request<Ok>(endpoints.partners.verifyBank(partnerId), { method: 'POST' }),
-
-  rejectBank: (partnerId: ID, reason: string) =>
-    USE_MOCK
-      ? mock.mockWallets.rejectBank(partnerId, reason)
-      : request<Ok>(endpoints.partners.rejectBank(partnerId), {
-          method: 'POST',
-          body: { reason },
-        }),
+      ? mock.mockPartners.reactivate(id)
+      : request<Ok>(endpoints.partners.reactivate(id), { method: 'POST' }),
 
   /** Admin-initiated onboarding: an SMS invite, then the partner completes KYC. */
   invite: (phone: string, type: Partner['type'], name?: string) =>
@@ -323,11 +312,38 @@ export const cancellationsApi = {
       : request<Ok>(endpoints.cancellations.retryRefund(id), { method: 'POST' }),
 };
 
+/**
+ * Collapses the two report vocabularies into one canonical shape.
+ *
+ * `/admin/reports/summary` (ours) and `/reports/summary` (partner) share a path suffix
+ * and name almost every money field differently. We have now been burned by that
+ * confusion in both directions in a single review round: first reading `vat` when the
+ * admin field is `vatCollected`, then being told `vatCollected` was wrong when it was
+ * right. Accepting both sets ends the argument — whichever payload arrives, the tile
+ * renders.
+ *
+ * The `netProfit` mapping is not a rename but a correction: it is `SUM(partner_share)`,
+ * money owed *to* partners, which on an admin screen labelled "profit" would overstate
+ * Mamsa's earnings 49×. It lands on `partnersShare`, where the copy is already honest.
+ */
+export function normalizeReportsSummary(raw: ReportsSummaryResponse): ReportsSummary {
+  const { grossRevenue, commission, netProfit, vat, ...rest } = raw;
+
+  return {
+    ...rest,
+    totalRevenue: raw.totalRevenue ?? grossRevenue ?? 0,
+    totalCommission: raw.totalCommission ?? commission ?? 0,
+    vatCollected: raw.vatCollected ?? vat,
+    partnersShare: raw.partnersShare ?? netProfit,
+  };
+}
+
 export const reportsApi = {
   summary: (range: ReportRange = '1y') =>
-    USE_MOCK
+    (USE_MOCK
       ? mock.mockReports.summary(range)
-      : request<ReportsSummary>(endpoints.reports.summary, { params: { range } }),
+      : request<ReportsSummaryResponse>(endpoints.reports.summary, { params: { range } })
+    ).then(normalizeReportsSummary),
 };
 
 export const walletsApi = {
@@ -351,10 +367,26 @@ export const walletsApi = {
           params: params as never,
         }),
 
-  adjust: (partnerId: ID, input: { amount: number; reason: string }) =>
+  /**
+   * Admits a partner's payout destination. Returns only `{ ok: true }` — neither action
+   * echoes the updated account, so the caller must refetch `get(partnerId)` and
+   * invalidate the payout run, which this verify is what changes.
+   *
+   * Keyed on `wallets.adjust`, NOT `partners.manage`: finance records transfers but must
+   * not be able to approve where the money goes. That split is the control.
+   */
+  verifyBank: (partnerId: ID) =>
     USE_MOCK
-      ? mock.mockWallets.adjust(partnerId, input)
-      : request<Ok>(endpoints.wallets.adjust(partnerId), { method: 'POST', body: input }),
+      ? mock.mockWallets.verifyBank(partnerId)
+      : request<Ok>(endpoints.wallets.verifyBank(partnerId), { method: 'POST' }),
+
+  rejectBank: (partnerId: ID, reason: string) =>
+    USE_MOCK
+      ? mock.mockWallets.rejectBank(partnerId, reason)
+      : request<Ok>(endpoints.wallets.rejectBank(partnerId), {
+          method: 'POST',
+          body: { reason },
+        }),
 };
 
 /**
@@ -389,49 +421,35 @@ export const payoutsApi = {
       ? mock.mockPayouts.listIneligible()
       : request<IneligiblePartner[]>(endpoints.payouts.ineligible),
 
+  /**
+   * Recorded transfers for a month. `totalAmount` covers the WHOLE filter, not the page,
+   * and excludes reversed rows — while `items` still contains them. The two answer
+   * different questions on purpose: what happened, versus what it came to.
+   */
   list: (params?: PayoutListParams) =>
     USE_MOCK
       ? mock.mockPayouts.list(params)
-      : request<Paginated<Payout>>(endpoints.payouts.list, { params: params as never }),
+      : request<PayoutPage>(endpoints.payouts.list, { params: params as never }),
 
-  stats: () =>
-    USE_MOCK ? mock.mockPayouts.stats() : request<PayoutStats>(endpoints.payouts.stats),
-
-  get: (id: ID) =>
-    USE_MOCK ? mock.mockPayouts.get(id) : request<PayoutDetail>(endpoints.payouts.detail(id)),
-
-  /** Idempotency-Key guards the one action in this app that moves money on a retry. */
+  /**
+   * The one call in this app that concerns money already moved.
+   *
+   * No `Idempotency-Key` header: `bankReference` IS the idempotency key server-side, a
+   * reused one answers `409 DUPLICATE_BANK_REFERENCE` and records nothing. A second key
+   * for the same guarantee is one more thing to keep in sync, and nothing read it.
+   *
+   * Not a CORS constraint — `config/cors.php` allows every header, and the partner
+   * dashboard sends `Idempotency-Key` from a browser today. Custom headers are fine here
+   * when there is a reason for one; there simply is not.
+   */
   record: (input: RecordPayoutInput) =>
     USE_MOCK
       ? mock.mockPayouts.record(input)
       : request<{ ok: true; payoutId: string; reference: string }>(endpoints.payouts.record, {
           method: 'POST',
           body: recordPayoutBody(input),
-          headers: { 'Idempotency-Key': idempotencyKey() },
-        }),
-
-  reverse: (id: ID, input: { reason: string }) =>
-    USE_MOCK
-      ? mock.mockPayouts.reverse(id, input)
-      : request<Ok>(endpoints.payouts.reverse(id), { method: 'POST', body: input }),
-
-  resendNotification: (id: ID) =>
-    USE_MOCK
-      ? mock.mockPayouts.resendNotification(id)
-      : request<Ok>(endpoints.payouts.resendNotification(id), { method: 'POST' }),
-
-  createManual: (input: { partnerId: ID; amount: number; note: string; override?: boolean }) =>
-    USE_MOCK
-      ? mock.mockPayouts.createManual(input)
-      : request<{ ok: true; payoutId: string }>(endpoints.payouts.manual, {
-          method: 'POST',
-          body: input,
         }),
 };
-
-function idempotencyKey(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 export const notificationsApi = {
   list: () =>

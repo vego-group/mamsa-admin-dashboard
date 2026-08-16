@@ -24,6 +24,7 @@ import { bookingsApi } from '@/lib/api';
 import { BOOKING_STATUS, type BookingStatus } from '@/lib/constants';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatDate, formatSAR } from '@/lib/utils/format';
+import { appliedSort } from '@/lib/utils/sort';
 import type { Booking, BookingStats, ID, Paginated } from '@/types';
 
 const PAGE_SIZE = 10;
@@ -46,6 +47,9 @@ function BookingsPageContent() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
+
+  /** The arrow follows what the API applied, not what we asked for. See appliedSort. */
+  const applied = appliedSort(result, sort);
 
   useEffect(() => {
     let stale = false;
@@ -142,6 +146,7 @@ function BookingsPageContent() {
         key: 'checkIn',
         header: t.bookings.dates,
         width: '11%',
+        sortable: true,
         cell: (row) => <LtrText className="text-slate-500">{formatDate(row.checkIn)}</LtrText>,
       },
       {
@@ -157,7 +162,9 @@ function BookingsPageContent() {
         key: 'commission',
         header: t.bookings.commission,
         width: '10%',
-        sortable: true,
+        // Not sortable: `commission` is a computed expression server-side, not a column,
+        // so the API silently ignores it and returns the default order. A sort control
+        // that reorders nothing is worse than no control (backend reply 2026-08-16 §9.2).
         cell: (row) => (
           <span className="font-medium tabular-nums text-status-blue">
             {formatSAR(row.commission)}
@@ -265,8 +272,8 @@ function BookingsPageContent() {
         onRetry={reload}
         onRowClick={(row) => setInspecting(row.id)}
         emptyTitle={t.bookings.empty}
-        sortBy={sort?.by}
-        sortDir={sort?.dir}
+        sortBy={applied.by}
+        sortDir={applied.dir}
         onSort={(key) =>
           setSort((current) =>
             current?.by === key
@@ -281,6 +288,8 @@ function BookingsPageContent() {
               value={status}
               onChange={(next) => setStatus(next as BookingStatus | 'all')}
             />
+            {/* Searches booking code (`BKG-0231`, parsed back to the id), guest name,
+                guest phone in any format, unit name and partner name. */}
             <SearchInput
               value={search}
               onChange={setSearch}

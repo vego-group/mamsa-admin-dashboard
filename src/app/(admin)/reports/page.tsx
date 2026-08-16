@@ -247,7 +247,10 @@ function ReportsPageContent() {
             {/* Its own tile, never a line in the revenue card and never added into a
                 total: this is money held for the authority, not money the platform
                 earned. Read straight from the API — deriving it from totalRevenue here
-                would double-count the day the backend flips to VAT-inclusive. */}
+                would double-count now that the backend is VAT-inclusive.
+
+                `vatCollected` is this endpoint's name for it; `vat` belongs to the
+                partner dashboard's report and is accepted only as a fallback. */}
             <Card className="flex flex-col justify-center p-5">
               <p className="text-sm text-slate-600">{t.reports.vatCollected}</p>
               <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
@@ -258,6 +261,18 @@ function ReportsPageContent() {
                 )}
               </p>
               <p className="mt-2 text-xs text-slate-500">{t.reports.vatNotRevenue}</p>
+
+              {/* Legacy-only, and silent when there is nothing to explain. Without it a
+                  reader closing the gross-to-net gap with tax alone reads a 19.6% VAT
+                  rate off a screen that never says so. */}
+              {summary.fees !== undefined && summary.fees > 0 && (
+                <p className="mt-3 border-t border-hairline pt-3 text-xs text-slate-500">
+                  {t.reports.legacyFees}{' '}
+                  <span className="font-semibold tabular-nums text-slate-700">
+                    {money(summary.fees)}
+                  </span>
+                </p>
+              )}
             </Card>
           </div>
 
