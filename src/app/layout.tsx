@@ -19,6 +19,11 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 export const metadata: Metadata = {
   title: 'Mamsa — SuperAdmin',
   description: 'Mamsa platform administration console',
+  icons: {
+    icon: '/Mamsa_logo.ico',
+    shortcut: '/Mamsa_logo.ico',
+    apple: '/Mamsa_logo.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
