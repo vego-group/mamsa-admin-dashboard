@@ -29,6 +29,7 @@ import type {
   Cancellation,
   CancellationListParams,
   CancellationStats,
+  City,
   DashboardSummary,
   EligiblePartner,
   HighRiskPartner,
@@ -52,9 +53,11 @@ import type {
   ReportsSummary,
   Unit,
   UnitDetail,
-  UnitDraft,
+  UnitCreateBody,
   UnitListParams,
+  UnitPatchBody,
   UnitStats,
+  UploadKind,
   User,
   UserDetail,
   UserListParams,
@@ -690,7 +693,62 @@ export const mockUnits = {
   },
 
   unpublish: (id: ID, reason: string) => delay({ ok: true as const, id, reason }),
-  create: (draft: UnitDraft) => delay({ ok: true as const, ...draft }),
+
+  /** Mirrors the real endpoint: a `201` carrying the created unit, never `{ ok: true }`. */
+  create: (body: UnitCreateBody): Promise<UnitDetail> =>
+    delay(seed.createdUnitDetail(body)),
+
+  update: (id: ID, body: UnitPatchBody): Promise<UnitDetail> => {
+    const unit = seed.units.find((u) => u.id === id);
+    if (!unit) return Promise.reject(new ApiError('الوحدة غير موجودة', 404, 'NOT_FOUND'));
+    if (unit.status === UNIT_STATUS.PENDING_REVIEW) {
+      return delay(
+        Promise.reject(
+          new ApiError('الوحدة قيد المراجعة ولا يمكن تعديلها الآن', 409, 'CONFLICT'),
+        ),
+      ) as Promise<never>;
+    }
+
+    // An edit to an approved unit sends it back for review — the same rule the partner
+    // dashboard warns about before saving.
+    const next = { ...seed.unitDetail(unit), ...body };
+    return delay({
+      ...next,
+      status: unit.status === UNIT_STATUS.APPROVED ? UNIT_STATUS.PENDING_REVIEW : unit.status,
+    } as UnitDetail);
+  },
+
+  remove: (id: ID) => {
+    const unit = seed.units.find((u) => u.id === id);
+    if (unit && unit.status !== UNIT_STATUS.DRAFT) {
+      return delay(
+        Promise.reject(new ApiError('لا يمكن حذف وحدة غادرت المسودة', 409, 'CONFLICT')),
+      ) as Promise<never>;
+    }
+    return delay({ ok: true as const, id });
+  },
+
+  submit: (id: ID): Promise<UnitDetail> => {
+    const unit = seed.units.find((u) => u.id === id);
+    const base = unit ? seed.unitDetail(unit) : seed.createdUnitDetail({} as UnitCreateBody);
+    return delay({ ...base, id, status: UNIT_STATUS.PENDING_REVIEW });
+  },
+};
+
+/**
+ * Mock uploads resolve instantly with a synthetic id — there is no bucket behind this,
+ * so the preview the wizard shows is the local blob either way.
+ */
+export const mockUploads = {
+  upload: (kind: UploadKind, file: File) =>
+    delay({
+      fileId: `file_${kind}_${Math.random().toString(36).slice(2, 10)}`,
+      fileName: file.name,
+    }),
+};
+
+export const mockCities = {
+  list: (): Promise<City[]> => delay(seed.cities),
 };
 
 /* ------------------------------------------------------------- approvals */

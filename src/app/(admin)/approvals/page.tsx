@@ -709,8 +709,18 @@ function RequestCard({
           {request.unitName} — {city}
         </p>
 
-        <p className="mt-0.5 truncate text-sm text-slate-500">
-          <LtrText>{formatDate(request.submittedAt)}</LtrText> · {request.partnerName}
+        <p className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-slate-500">
+          <LtrText>{formatDate(request.submittedAt)}</LtrText> ·{' '}
+          {/*
+            A Mamsa-owned listing has no applicant. Badging it stops a reviewer reading
+            the platform's own row as a third party's submission — which is exactly what
+            happened while this column printed the creating admin's personal name.
+          */}
+          {request.mamsaOwned ? (
+            <StatusBadge status="mamsa_owned" dot={false} />
+          ) : (
+            <span className="truncate">{request.partnerName}</span>
+          )}
         </p>
       </div>
 

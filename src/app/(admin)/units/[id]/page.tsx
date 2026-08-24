@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Bath,
   BedDouble,
@@ -12,7 +13,9 @@ import {
   EyeOff,
   MapPin,
   Maximize,
+  Pencil,
   Star,
+  Trash2,
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -22,6 +25,7 @@ import { ImageGallery } from '@/components/approvals/ImageGallery';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCan } from '@/hooks/useCan';
 import { useT } from '@/i18n';
 import { ApiError, unitsApi } from '@/lib/api';
 import { UNIT_STATUS } from '@/lib/constants';
@@ -38,11 +42,14 @@ export default function UnitDetailPage({ params }: { params: { id: string } }) {
 
 function UnitDetailPageContent({ params }: { params: { id: string } }) {
   const t = useT();
+  const router = useRouter();
+  const { can } = useCan();
 
   const [detail, setDetail] = useState<UnitDetail | null>(null);
   const [error, setError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [unpublishing, setUnpublishing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -108,17 +115,37 @@ function UnitDetailPageContent({ params }: { params: { id: string } }) {
         <StatusBadge status={detail.status} />
         {detail.mamsaOwned && <StatusBadge status="mamsa_owned" dot={false} />}
 
-        {detail.status === UNIT_STATUS.APPROVED && (
-          <Button
-            variant="destructive"
-            size="sm"
-            className="ms-auto"
-            onClick={() => setUnpublishing(true)}
-          >
-            <EyeOff className="h-4 w-4" />
-            {t.units.unpublish}
-          </Button>
-        )}
+        <div className="ms-auto flex flex-wrap items-center gap-2">
+          {/*
+            A unit under review is locked server-side — the API answers 409 — so the
+            button is absent rather than present and rejected.
+          */}
+          {can('units.manage') && detail.status !== UNIT_STATUS.PENDING_REVIEW && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push(`/units/${detail.id}/edit`)}
+            >
+              <Pencil className="h-4 w-4" />
+              {t.units.edit}
+            </Button>
+          )}
+
+          {/* Drafts only. Past draft the unit has history worth keeping. */}
+          {can('units.manage') && detail.status === UNIT_STATUS.DRAFT && (
+            <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+              <Trash2 className="h-4 w-4" />
+              {t.units.delete}
+            </Button>
+          )}
+
+          {detail.status === UNIT_STATUS.APPROVED && (
+            <Button variant="destructive" size="sm" onClick={() => setUnpublishing(true)}>
+              <EyeOff className="h-4 w-4" />
+              {t.units.unpublish}
+            </Button>
+          )}
+        </div>
       </nav>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -269,6 +296,20 @@ function UnitDetailPageContent({ params }: { params: { id: string } }) {
             }
             throw err;
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={t.units.deleteTitle}
+        variant="destructive"
+        description={<RichText template={t.units.deleteQuestion} values={{ name: detail.name }} />}
+        impact={t.units.deleteConsequence}
+        confirmLabel={t.units.delete}
+        onConfirm={async () => {
+          await unitsApi.remove(detail.id);
+          router.push('/units');
         }}
       />
     </div>

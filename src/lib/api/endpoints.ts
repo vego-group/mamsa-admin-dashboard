@@ -95,6 +95,23 @@ export const endpoints = {
     create: '/admin/units',
     detail: (id: string) => `/admin/units/${id}`,
     unpublish: (id: string) => `/admin/units/${id}/unpublish`,
+    /** Moves a draft into the review queue. No body; returns the unit as `pending_review`. */
+    submit: (id: string) => `/admin/units/${id}/submit`,
+    /** Partial. An absent key means "unchanged", never "blank it". */
+    update: (id: string) => `/admin/units/${id}`,
+    /** Drafts only — past draft the unit has history and the API answers `409`. */
+    remove: (id: string) => `/admin/units/${id}`,
+  },
+  uploads: {
+    presign: '/admin/uploads/presign',
+  },
+  /**
+   * The twenty cities the platform serves, with both labels. Fetched rather than
+   * hardcoded: the console shipped with eight, which silently made units in the other
+   * twelve unfilterable.
+   */
+  cities: {
+    list: '/admin/cities',
   },
   approvals: {
     list: '/admin/approvals',

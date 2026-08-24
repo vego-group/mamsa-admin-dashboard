@@ -69,17 +69,29 @@ export const DOCUMENT_STATUS = {
 } as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUS)[keyof typeof DOCUMENT_STATUS];
 
+/**
+ * Three, and only three. `chalet` and `hotel_room` were listed here and are **rejected**
+ * by the API with `422` on `fields.type` — the platform has never supported them.
+ *
+ * Their labels stay in the dictionaries so a legacy row, if one exists, still renders a
+ * word rather than a raw slug. Nothing may offer them as a choice.
+ */
 export const UNIT_TYPE = {
   APARTMENT: 'apartment',
-  VILLA: 'villa',
-  CHALET: 'chalet',
   STUDIO: 'studio',
-  HOTEL_ROOM: 'hotel_room',
+  VILLA: 'villa',
 } as const;
 export type UnitType = (typeof UNIT_TYPE)[keyof typeof UNIT_TYPE];
 
 export const PARTNER_TYPE = { INDIVIDUAL: 'individual', COMPANY: 'company' } as const;
 export type PartnerType = (typeof PARTNER_TYPE)[keyof typeof PARTNER_TYPE];
+
+/**
+ * What an approval row's owner can be. Mamsa's own listings arrive as `mamsa` — a third
+ * value that is deliberately **not** in `PARTNER_TYPE`: the platform is not a partner,
+ * has no wallet and no KYC, and must never appear in a partner filter or payout run.
+ */
+export type ApprovalPartnerType = PartnerType | 'mamsa';
 
 export const CANCELLATION_POLICY = {
   FLEXIBLE: 'flexible',
@@ -114,3 +126,32 @@ export const NOTIFICATION_CATEGORY = {
 } as const;
 export type NotificationCategory =
   (typeof NOTIFICATION_CATEGORY)[keyof typeof NOTIFICATION_CATEGORY];
+
+/**
+ * The fifteen amenity keys the platform stores, and the only fifteen — an unknown key
+ * is rejected with `422` on `amenities.{n}`. Labels live in the dictionaries; this is
+ * the wire vocabulary.
+ *
+ * The first eight are the set the partner wizard shows. The remaining seven exist and
+ * partner units already use them, so an admin listing that could not offer a lift or a
+ * washing machine would be describing a worse unit than the same property listed by a
+ * partner.
+ */
+export const AMENITY = {
+  WIFI: 'wifi',
+  AC: 'ac',
+  KITCHEN: 'kitchen',
+  PARKING: 'parking',
+  POOL: 'pool',
+  SECURITY: 'security',
+  SELF_CHECKIN: 'self_checkin',
+  FAMILY_FRIENDLY: 'family_friendly',
+  SMART_TV: 'smart_tv',
+  GARDEN: 'garden',
+  BBQ: 'bbq',
+  ELEVATOR: 'elevator',
+  WASHER: 'washer',
+  PRIVATE_BEACH: 'private_beach',
+  EVENT_HALL: 'event_hall',
+} as const;
+export type Amenity = (typeof AMENITY)[keyof typeof AMENITY];

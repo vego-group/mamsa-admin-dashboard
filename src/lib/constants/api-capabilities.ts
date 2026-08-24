@@ -67,3 +67,29 @@ export const VALUE_ONLY_DOCUMENT_KINDS = ['commercial_registration', 'iban'] as 
  * as a client-side strategy, which is why every export button says *current page*.
  */
 export const MAX_PAGE_SIZE = 100;
+
+/* ------------------------------------------------ Mamsa-owned unit creation */
+
+/**
+ * The admin listing wizard is **fully supported** as of 2026-08-24 — uploads, the wide
+ * create body, and submit-for-review are all live on staging and production.
+ *
+ * The three flags below are kept rather than deleted. They are the seam the wizard was
+ * built against, and the record of what once had to be withheld; a future endpoint that
+ * regresses has one place to say so. Nothing in the UI branches on them being false any
+ * more, so flipping one back off degrades the wizard rather than breaking it.
+ *
+ * Source: `MAMSA-FRONTEND-ADMIN-UNIT-WIZARD.md` §11.
+ */
+
+/** `POST /admin/uploads/presign` + `PUT` — permit and photo upload. */
+export const ADMIN_UPLOADS_ENABLED = true;
+
+/**
+ * `POST /admin/units` accepts the whole listing, not just the nine stored fields.
+ * It also now returns the created unit (`201`), never `{ ok: true }`.
+ */
+export const ADMIN_UNIT_CREATE_ACCEPTS_FULL_DRAFT = true;
+
+/** `POST /admin/units/{id}/submit` — moves a draft into the review queue. */
+export const ADMIN_UNIT_SUBMIT_ENABLED = true;

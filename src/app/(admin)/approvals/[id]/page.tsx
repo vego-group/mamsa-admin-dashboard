@@ -333,7 +333,8 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
               <div className="min-w-0">
                 <p className="truncate font-semibold text-slate-900">{detail.partnerName}</p>
                 <p className="truncate text-sm text-slate-500">
-                  {t.status[detail.partnerType]} · {city}
+                  {(t.status as Record<string, string>)[detail.partnerType] ?? detail.partnerType} ·{' '}
+                  {city}
                 </p>
               </div>
             </div>

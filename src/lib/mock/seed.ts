@@ -1,7 +1,10 @@
 import {
   ACCOUNT_STATUS,
+  AMENITY,
+  type Amenity,
   BOOKING_STATUS,
   CANCELLATION_POLICY,
+  type CancellationPolicyName,
   CANCELLED_BY,
   DOCUMENT_STATUS,
   NOTIFICATION_CATEGORY,
@@ -33,6 +36,7 @@ import type {
   Booking,
   BookingDetail,
   Cancellation,
+  City,
   NotificationItem,
   Partner,
   PartnerDetail,
@@ -42,6 +46,7 @@ import type {
   Payout,
   PolicySnapshot,
   Unit,
+  UnitCreateBody,
   UnitDetail,
   User,
   UserDetail,
@@ -301,7 +306,7 @@ interface UnitSeed {
 const unitSeeds: UnitSeed[] = [
   { code: 'UNT-001', name: 'شقة فاخرة — حي العليا', partnerIndex: 0, city: 'Riyadh', district: 'Al Olaya', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 850, bedrooms: 3, bathrooms: 2, capacity: 6, size: 180, rating: 4.9, reviews: 124, occupancy: 78, revenue: 182000, bookings: 96 },
   { code: 'UNT-002', name: 'فيلا مع مسبح خاص', partnerIndex: 0, city: 'Riyadh', district: 'Al Nakheel', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 2200, bedrooms: 5, bathrooms: 4, capacity: 10, size: 450, rating: 4.8, reviews: 87, occupancy: 64, revenue: 312000, bookings: 71 },
-  { code: 'UNT-003', name: 'شاليه بحري — أبحر', partnerIndex: 1, city: 'Jeddah', district: 'Obhur', type: UNIT_TYPE.CHALET, status: UNIT_STATUS.APPROVED, price: 1400, bedrooms: 4, bathrooms: 3, capacity: 8, size: 320, rating: 4.7, reviews: 213, occupancy: 82, revenue: 428000, bookings: 154 },
+  { code: 'UNT-003', name: 'شاليه بحري — أبحر', partnerIndex: 1, city: 'Jeddah', district: 'Obhur', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 1400, bedrooms: 4, bathrooms: 3, capacity: 8, size: 320, rating: 4.7, reviews: 213, occupancy: 82, revenue: 428000, bookings: 154 },
   { code: 'UNT-004', name: 'شقة قريبة من الحرم المكي', partnerIndex: 2, city: 'Makkah', district: 'Ajyad', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 620, bedrooms: 2, bathrooms: 2, capacity: 5, size: 110, rating: 4.6, reviews: 341, occupancy: 91, revenue: 198000, bookings: 188 },
   { code: 'UNT-005', name: 'بنتهاوس كورنيش الدمام', partnerIndex: 7, city: 'Dammam', district: 'Corniche', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 1800, bedrooms: 4, bathrooms: 3, capacity: 8, size: 260, rating: 4.5, reviews: 56, occupancy: 58, revenue: 143000, bookings: 48 },
   { code: 'UNT-006', name: 'ستوديو حديث — المدينة', partnerIndex: 3, city: 'Madinah', district: 'Quba', type: UNIT_TYPE.STUDIO, status: UNIT_STATUS.PENDING_REVIEW, price: 380, bedrooms: 1, bathrooms: 1, capacity: 2, size: 45, rating: 4.2, reviews: 29, occupancy: 45, revenue: 47000, bookings: 61 },
@@ -309,18 +314,18 @@ const unitSeeds: UnitSeed[] = [
   { code: 'UNT-008', name: 'شقة المصيف — أبها', partnerIndex: 6, city: 'Abha', district: 'Al Sadd', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.REJECTED, price: 520, bedrooms: 2, bathrooms: 2, capacity: 4, size: 95, rating: 3.8, reviews: 14, occupancy: 31, revenue: 28000, bookings: 19, rejectionReason: 'تصريح منتهي الصلاحية' },
   { code: 'UNT-009', name: 'فيلا الأندلس — الرياض', partnerIndex: 0, city: 'Riyadh', district: 'Al Nakheel', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.PENDING_REVIEW, price: 2200, bedrooms: 5, bathrooms: 4, capacity: 10, size: 450, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
   { code: 'UNT-010', name: 'مجمع شقق النسيم', partnerIndex: 9, city: 'Khobar', district: 'Al Naseem', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.PENDING_REVIEW, price: 700, bedrooms: 3, bathrooms: 2, capacity: 6, size: 150, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
-  { code: 'UNT-011', name: 'شاليه بانوراما — أبها', partnerIndex: 8, city: 'Abha', district: 'Al Suda', type: UNIT_TYPE.CHALET, status: UNIT_STATUS.PENDING_REVIEW, price: 1100, bedrooms: 3, bathrooms: 2, capacity: 8, size: 210, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
-  { code: 'UNT-012', name: 'فندق بوتيك المدينة القديمة', partnerIndex: 1, city: 'Jeddah', district: 'Al Balad', type: UNIT_TYPE.HOTEL_ROOM, status: UNIT_STATUS.PENDING_REVIEW, price: 900, bedrooms: 1, bathrooms: 1, capacity: 3, size: 60, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
+  { code: 'UNT-011', name: 'شاليه بانوراما — أبها', partnerIndex: 8, city: 'Abha', district: 'Al Suda', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.PENDING_REVIEW, price: 1100, bedrooms: 3, bathrooms: 2, capacity: 8, size: 210, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
+  { code: 'UNT-012', name: 'فندق بوتيك المدينة القديمة', partnerIndex: 1, city: 'Jeddah', district: 'Al Balad', type: UNIT_TYPE.STUDIO, status: UNIT_STATUS.PENDING_REVIEW, price: 900, bedrooms: 1, bathrooms: 1, capacity: 3, size: 60, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
   { code: 'UNT-013', name: 'مزرعة الأمل — الطائف', partnerIndex: 4, city: 'Taif', district: 'Al Hada', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.PENDING_REVIEW, price: 1600, bedrooms: 4, bathrooms: 3, capacity: 12, size: 600, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
   { code: 'UNT-014', name: 'شقة ممسى التجريبية — العليا', partnerIndex: 0, city: 'Riyadh', district: 'Al Olaya', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 950, bedrooms: 2, bathrooms: 2, capacity: 4, size: 120, rating: 4.6, reviews: 33, occupancy: 69, revenue: 88000, bookings: 40, mamsaOwned: true },
   { code: 'UNT-015', name: 'استوديو المطار — جدة', partnerIndex: 1, city: 'Jeddah', district: 'Al Naeem', type: UNIT_TYPE.STUDIO, status: UNIT_STATUS.DRAFT, price: 330, bedrooms: 1, bathrooms: 1, capacity: 2, size: 40, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
   { code: 'UNT-016', name: 'شقة الروضة — الرياض', partnerIndex: 5, city: 'Riyadh', district: 'Al Rawdah', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 780, bedrooms: 3, bathrooms: 2, capacity: 6, size: 160, rating: 4.4, reviews: 71, occupancy: 66, revenue: 121000, bookings: 55 },
-  { code: 'UNT-017', name: 'شاليه الشاطئ — الخبر', partnerIndex: 7, city: 'Khobar', district: 'Half Moon', type: UNIT_TYPE.CHALET, status: UNIT_STATUS.APPROVED, price: 1500, bedrooms: 4, bathrooms: 3, capacity: 10, size: 340, rating: 4.5, reviews: 62, occupancy: 71, revenue: 176000, bookings: 58 },
+  { code: 'UNT-017', name: 'شاليه الشاطئ — الخبر', partnerIndex: 7, city: 'Khobar', district: 'Half Moon', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 1500, bedrooms: 4, bathrooms: 3, capacity: 10, size: 340, rating: 4.5, reviews: 62, occupancy: 71, revenue: 176000, bookings: 58 },
   { code: 'UNT-018', name: 'شقة السلامة — جدة', partnerIndex: 1, city: 'Jeddah', district: 'Al Salamah', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.REJECTED, price: 640, bedrooms: 2, bathrooms: 1, capacity: 4, size: 105, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0, rejectionReason: 'الصور غير واضحة ولا تعكس حالة الوحدة' },
   { code: 'UNT-019', name: 'فيلا قرطبة — الرياض', partnerIndex: 5, city: 'Riyadh', district: 'Qurtubah', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 3200, bedrooms: 6, bathrooms: 5, capacity: 14, size: 700, rating: 4.8, reviews: 44, occupancy: 61, revenue: 289000, bookings: 37 },
   { code: 'UNT-020', name: 'شقة طيبة — المدينة', partnerIndex: 3, city: 'Madinah', district: 'Taibah', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.DRAFT, price: 450, bedrooms: 2, bathrooms: 1, capacity: 4, size: 90, rating: 0, reviews: 0, occupancy: 0, revenue: 0, bookings: 0 },
   // One unit each for PTR-011..014 so their payout history has real stays behind it.
-  { code: 'UNT-021', name: 'شاليه رمال — الدمام', partnerIndex: 10, city: 'Dammam', district: 'Corniche', type: UNIT_TYPE.CHALET, status: UNIT_STATUS.APPROVED, price: 1250, bedrooms: 3, bathrooms: 2, capacity: 8, size: 240, rating: 4.6, reviews: 51, occupancy: 68, revenue: 154000, bookings: 49 },
+  { code: 'UNT-021', name: 'شاليه رمال — الدمام', partnerIndex: 10, city: 'Dammam', district: 'Corniche', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 1250, bedrooms: 3, bathrooms: 2, capacity: 8, size: 240, rating: 4.6, reviews: 51, occupancy: 68, revenue: 154000, bookings: 49 },
   { code: 'UNT-022', name: 'شقة الياسمين — الرياض', partnerIndex: 11, city: 'Riyadh', district: 'Al Yasmin', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 720, bedrooms: 2, bathrooms: 2, capacity: 5, size: 130, rating: 4.7, reviews: 88, occupancy: 74, revenue: 132000, bookings: 63 },
   { code: 'UNT-023', name: 'فيلا سدير — الرياض', partnerIndex: 12, city: 'Riyadh', district: 'Sudair', type: UNIT_TYPE.VILLA, status: UNIT_STATUS.APPROVED, price: 2400, bedrooms: 5, bathrooms: 4, capacity: 12, size: 520, rating: 4.5, reviews: 39, occupancy: 59, revenue: 287000, bookings: 41 },
   { code: 'UNT-024', name: 'شقة الشاطئ — جدة', partnerIndex: 13, city: 'Jeddah', district: 'Al Shatea', type: UNIT_TYPE.APARTMENT, status: UNIT_STATUS.APPROVED, price: 890, bedrooms: 2, bathrooms: 2, capacity: 4, size: 115, rating: 4.4, reviews: 47, occupancy: 63, revenue: 118000, bookings: 38 },
@@ -361,6 +366,10 @@ export const units: Unit[] = unitSeeds.map((seed, index) => {
 const AMENITIES = ['WiFi', 'تكييف', 'موقف سيارات', 'أمن 24 ساعة', 'دخول ذاتي', 'خدمة تنظيف', 'مسبح'];
 
 export function unitDetail(unit: Unit): UnitDetail {
+  const images = unit.coverImage
+    ? [unit.coverImage, ...UNIT_IMAGES.filter((image) => image !== unit.coverImage).slice(0, 4)]
+    : [];
+
   return {
     ...unit,
     description:
@@ -368,18 +377,47 @@ export function unitDetail(unit: Unit): UnitDetail {
     // Cover first, then four more so the gallery arrows have somewhere to go. A unit with
     // no cover has no photography at all — never a one-element array of a stand-in, which
     // is what let a reviewer tick "photos reviewed" on an empty listing.
-    images: unit.coverImage
-      ? [unit.coverImage, ...UNIT_IMAGES.filter((image) => image !== unit.coverImage).slice(0, 4)]
-      : [],
+    images,
     amenities: AMENITIES.slice(0, 5 + (unit.capacity % 3)),
+    // The keys the write side takes, alongside the Arabic labels the read side shows.
+    amenityKeys: AMENITY_KEY_POOL.slice(0, 2 + (unit.capacity % 4)),
+    // Every photo carries its upload id, which is what lets an edit merge rather than
+    // replace. `isCover` marks the first one, matching the real response.
+    photos: images.map((url, index) => ({
+      id: `file_${unit.code.toLowerCase()}_${index}`,
+      url,
+      isCover: index === 0,
+    })),
     lat: 24.736828,
     lng: 46.654403,
+    address: `${unit.district}، ${unit.city}`,
+    beds: Math.max(1, unit.bedrooms),
+    checkIn: '16:00',
+    checkOut: '11:00',
+    // Never null — a unit that never chose one reports the default the engine applies.
+    cancellationPolicy: UNIT_POLICIES[unit.capacity % UNIT_POLICIES.length],
+    cityKey: cities.find((city) => city.ar === unit.city || city.en === unit.city)?.key ?? null,
     publicUrl: unit.status === UNIT_STATUS.APPROVED ? `https://mamsaa.com/units/${unit.code}` : null,
     tourismPermitNo: '73101915',
     permitFileUrl: '/mock/permit.pdf',
+    tourismLicenseFileId: `file_${unit.code.toLowerCase()}_permit`,
     ownerIdNumber: '1010101010',
   };
 }
+
+const AMENITY_KEY_POOL: Amenity[] = [
+  AMENITY.WIFI,
+  AMENITY.AC,
+  AMENITY.KITCHEN,
+  AMENITY.PARKING,
+  AMENITY.ELEVATOR,
+];
+
+const UNIT_POLICIES: CancellationPolicyName[] = [
+  CANCELLATION_POLICY.FLEXIBLE,
+  CANCELLATION_POLICY.MODERATE,
+  CANCELLATION_POLICY.STRICT,
+];
 
 /* -------------------------------------------------------------- approvals */
 
@@ -1217,4 +1255,91 @@ export function riyadhPeriodMonth(iso: string): string {
   const year = parts.find((part) => part.type === 'year')!.value;
   const month = parts.find((part) => part.type === 'month')!.value;
   return `${year}-${month}`;
+}
+
+/* ----------------------------------------------------------------- cities */
+
+/**
+ * The twenty cities `GET /admin/cities` serves. The console shipped with eight, which
+ * left units in the other twelve unfilterable — and, until the API started rejecting
+ * them, stored under a city string no filter matched.
+ */
+export const cities: City[] = [
+  { key: 'riyadh', en: 'Riyadh', ar: 'الرياض' },
+  { key: 'jeddah', en: 'Jeddah', ar: 'جدة' },
+  { key: 'makkah', en: 'Makkah', ar: 'مكة المكرمة' },
+  { key: 'madinah', en: 'Madinah', ar: 'المدينة المنورة' },
+  { key: 'dammam', en: 'Dammam', ar: 'الدمام' },
+  { key: 'khobar', en: 'Khobar', ar: 'الخبر' },
+  { key: 'dhahran', en: 'Dhahran', ar: 'الظهران' },
+  { key: 'taif', en: 'Taif', ar: 'الطائف' },
+  { key: 'abha', en: 'Abha', ar: 'أبها' },
+  { key: 'khamis_mushait', en: 'Khamis Mushait', ar: 'خميس مشيط' },
+  { key: 'tabuk', en: 'Tabuk', ar: 'تبوك' },
+  { key: 'buraydah', en: 'Buraydah', ar: 'بريدة' },
+  { key: 'hail', en: 'Hail', ar: 'حائل' },
+  { key: 'jubail', en: 'Jubail', ar: 'الجبيل' },
+  { key: 'yanbu', en: 'Yanbu', ar: 'ينبع' },
+  { key: 'najran', en: 'Najran', ar: 'نجران' },
+  { key: 'jazan', en: 'Jazan', ar: 'جازان' },
+  { key: 'alula', en: 'AlUla', ar: 'العلا' },
+  { key: 'baha', en: 'Baha', ar: 'الباحة' },
+  { key: 'hofuf', en: 'Hofuf', ar: 'الهفوف' },
+];
+
+/**
+ * The unit `POST /admin/units` hands back — a real record with an id, because the whole
+ * point of the changed response is that the caller can address what it just created.
+ */
+export function createdUnitDetail(body: UnitCreateBody): UnitDetail {
+  const id = `u_${Math.random().toString(36).slice(2, 8)}`;
+
+  return {
+    id,
+    code: `UNT-${String(units.length + 1).padStart(3, '0')}`,
+    name: body.name ?? 'وحدة جديدة',
+    partnerId: 'mamsa',
+    partnerName: 'ممسى',
+    city: body.city ?? cities[0].key,
+    district: body.district ?? '',
+    type: body.type ?? UNIT_TYPE.APARTMENT,
+    status: UNIT_STATUS.DRAFT,
+    pricePerNight: body.pricePerNight ?? 0,
+    bedrooms: body.bedrooms ?? 0,
+    bathrooms: body.bathrooms ?? 1,
+    capacity: body.capacity ?? 1,
+    sizeSqm: body.sizeSqm ?? 0,
+    rating: 0,
+    reviewsCount: 0,
+    occupancyRate: 0,
+    revenue: 0,
+    bookingsCount: 0,
+    coverImage: null,
+    // Set by the server on every admin-created unit. Never sent by us.
+    mamsaOwned: true,
+    rejectionReason: null,
+    approvedAt: null,
+    description: body.description ?? '',
+    images: [],
+    photos: (body.photoFileIds ?? []).map((id) => ({
+      id,
+      url: `/mock/uploads/${id}.jpg`,
+      isCover: id === body.coverFileId,
+    })),
+    amenities: [],
+    amenityKeys: body.amenities ? [...body.amenities] : [],
+    lat: body.lat ?? 0,
+    lng: body.lng ?? 0,
+    address: body.address ?? null,
+    beds: body.beds ?? Math.max(1, body.bedrooms ?? 1),
+    checkIn: body.checkIn ?? null,
+    checkOut: body.checkOut ?? null,
+    cancellationPolicy: body.cancellationPolicy ?? CANCELLATION_POLICY.MODERATE,
+    cityKey: body.city ?? null,
+    publicUrl: null,
+    tourismPermitNo: body.tourismLicenseNumber ?? null,
+    permitFileUrl: null,
+    tourismLicenseFileId: body.tourismLicenseFileId ?? null,
+    ownerIdNumber: null,
+  };
 }

@@ -23,13 +23,41 @@ export class ApiError extends Error {
    */
   readonly retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number, code = 'UNKNOWN', retryAfterSeconds: number | null = null) {
+  /**
+   * Per-field messages on a `VALIDATION_ERROR`, Arabic and ready to render.
+   *
+   * Keys are **flat strings that may contain dots** — `photoFileIds.2` is one key, not a
+   * path into a nested array. Read them with `error.fields?.['photoFileIds.2']`; indexing
+   * as `fields?.photoFileIds?.[2]` silently yields `undefined`, which is how a validation
+   * message disappears instead of throwing.
+   */
+  readonly fields: Record<string, string> | null;
+
+  constructor(
+    message: string,
+    status: number,
+    code = 'UNKNOWN',
+    retryAfterSeconds: number | null = null,
+    fields: Record<string, string> | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.fields = fields;
   }
+}
+
+/**
+ * The admin API's validation code. It is **not** the partner dashboard's `VALIDATION`,
+ * and it arrives as `422`, not `400` — the two consoles differ here, so a check copied
+ * from the partner code would never match.
+ */
+export const VALIDATION_ERROR = 'VALIDATION_ERROR';
+
+export function isValidationError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.code === VALIDATION_ERROR;
 }
 
 /**
@@ -89,19 +117,33 @@ function buildUrl(path: string, params?: Record<string, QueryValue>): string {
 /**
  * The backend returns an Arabic error envelope; surface the message as-is so the UI
  * can display it, and keep the machine-readable code for branching.
+ *
+ * This console's envelope is **flat** — `{ message, code, fields? }` — unlike the partner
+ * dashboard's nested `{ error: { … } }`. The nested form is still read as a fallback
+ * because reading it costs nothing and a wrong shape fails silently as `undefined`
+ * rather than throwing, which is the expensive way to find out.
  */
 async function toApiError(response: Response): Promise<ApiError> {
   let message = `Request failed with status ${response.status}`;
   let code = 'UNKNOWN';
+  let fields: Record<string, string> | null = null;
 
   try {
     const payload = (await response.json()) as {
       message?: string;
-      error?: string;
+      error?: string | { message?: string; code?: string; fields?: Record<string, string> };
       code?: string;
+      fields?: Record<string, string>;
     };
-    message = payload.message ?? payload.error ?? message;
-    code = payload.code ?? code;
+    const nested = typeof payload.error === 'object' ? payload.error : null;
+
+    message =
+      payload.message ??
+      nested?.message ??
+      (typeof payload.error === 'string' ? payload.error : undefined) ??
+      message;
+    code = payload.code ?? nested?.code ?? code;
+    fields = payload.fields ?? nested?.fields ?? null;
   } catch {
     // Non-JSON error body — keep the defaults.
   }
@@ -114,6 +156,7 @@ async function toApiError(response: Response): Promise<ApiError> {
     response.status,
     code,
     retryAfter !== null && Number.isFinite(retryAfter) ? retryAfter : null,
+    fields,
   );
 }
 

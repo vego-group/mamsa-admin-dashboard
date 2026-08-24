@@ -1,5 +1,7 @@
 import type {
   AccountStatus,
+  Amenity,
+  ApprovalPartnerType,
   BookingStatus,
   CancellationPolicyName,
   CancelledBy,
@@ -539,15 +541,50 @@ export interface Unit {
   approvedAt: ISODate | null;
 }
 
+export interface UnitPhoto {
+  /**
+   * The upload id — the value that goes back in `photoFileIds`, which is what makes an
+   * edit a merge rather than a replace.
+   *
+   * `null` for a row written before the upload flow existed: it has no re-sendable
+   * identity and cannot survive a `photoFileIds` edit. Zero such rows exist on either
+   * server, so this is a guard, not a live case.
+   */
+  id: string | null;
+  url: string;
+  isCover: boolean;
+}
+
 export interface UnitDetail extends Unit {
   description: string;
+  /** Display-only URLs. `photos` is the one to send back. */
   images: string[];
+  photos: UnitPhoto[];
+  /** Stored Arabic labels — for reading. `amenityKeys` is what the write side takes. */
   amenities: string[];
+  amenityKeys: Amenity[];
   lat: number;
   lng: number;
+  address: string | null;
+  /** `null` when it was never set; the server seeds it from `bedrooms` at create. */
+  beds: number | null;
+  /** `HH:mm`, the same format the write side takes. */
+  checkIn: string | null;
+  checkOut: string | null;
+  /**
+   * Never null. A unit that never chose one inherits the platform default, and this
+   * reports **what the engine would actually apply** — so `moderate` means either
+   * "explicitly moderate" or "never chose". Those are deliberately indistinguishable:
+   * a reviewer needs the policy that will be enforced, not how it was arrived at.
+   */
+  cancellationPolicy: CancellationPolicyName;
+  /** The stable slug. Match a dropdown on this, never on the reworded label. */
+  cityKey: string | null;
   publicUrl: string | null;
   tourismPermitNo: string | null;
+  /** Display URL — cannot be sent back. `tourismLicenseFileId` is the writable id. */
   permitFileUrl: string | null;
+  tourismLicenseFileId: string | null;
   ownerIdNumber: string | null;
 }
 
@@ -567,7 +604,11 @@ export interface UnitStats {
   totalRevenue: number;
 }
 
-/** Fields an admin supplies when listing a Mamsa-owned unit directly. */
+/**
+ * The nine fields `POST /admin/units` requires. Everything a complete listing also needs
+ * is optional at create and enforced at **submit** — that split is what lets an admin
+ * save a draft with photos but no permit yet.
+ */
 export interface UnitDraft {
   name: string;
   type: UnitType;
@@ -578,6 +619,52 @@ export interface UnitDraft {
   bathrooms: number;
   capacity: number;
   sizeSqm: number;
+}
+
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+/** Optional at create; several of these become required at submit. */
+export interface UnitDraftExtras {
+  /** 1–20. Defaults from `bedrooms` server-side when omitted. */
+  beds?: number;
+  description?: string;
+  amenities?: Amenity[];
+  cancellationPolicy?: CancellationPolicyName;
+  /** `HH:mm`, 24-hour. */
+  checkIn?: string;
+  checkOut?: string;
+  lat?: number;
+  lng?: number;
+  address?: string;
+  tourismLicenseNumber?: string;
+  tourismLicenseFileId?: string;
+  /** Ordered, and authoritative: the full set replaces whatever the unit had. */
+  photoFileIds?: string[];
+  /** Must be one of `photoFileIds`. */
+  coverFileId?: string;
+}
+
+/** What `POST /admin/units` receives. */
+export type UnitCreateBody = UnitDraft & UnitDraftExtras;
+
+/** What `PATCH /admin/units/{id}` receives — only the fields that actually changed. */
+export type UnitPatchBody = Partial<UnitCreateBody>;
+
+export type UploadKind = 'unit_photo' | 'license_pdf';
+
+export interface UploadedFile {
+  fileId: ID;
+  fileName: string;
+}
+
+export interface City {
+  /** What to send. Sending a label works too, but the key cannot be misspelled. */
+  key: string;
+  en: string;
+  ar: string;
 }
 
 /* ------------------------------------------------------------- approvals */
@@ -595,8 +682,14 @@ export interface ApprovalRequest {
   unitType: UnitType;
   city: string;
   partnerId: ID;
+  /**
+   * `"ممسى"` on the platform's own listings. It used to be the creating admin's personal
+   * name, which made a staff member look like an applicant in the review queue.
+   */
   partnerName: string;
-  partnerType: PartnerType;
+  partnerType: ApprovalPartnerType;
+  /** The platform owns this unit — there is no applicant and no revenue split. */
+  mamsaOwned?: boolean;
   submittedAt: ISODate;
   requestType: RequestType;
   previousRejection: PreviousRejection | null;

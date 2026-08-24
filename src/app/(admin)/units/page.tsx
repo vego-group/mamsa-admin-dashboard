@@ -16,20 +16,15 @@ import {
   StatusBadge,
 } from '@/components/common';
 import { RequirePermission } from '@/components/auth';
-import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { UnitCard } from '@/components/units/UnitCard';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCan } from '@/hooks/useCan';
+import { useCities } from '@/hooks/useCities';
 import { useT } from '@/i18n';
 import { unitsApi } from '@/lib/api';
-import {
-  SAUDI_CITIES,
-  UNIT_STATUS,
-  UNIT_TYPE,
-  type UnitStatus,
-  type UnitType,
-} from '@/lib/constants';
+import { UNIT_STATUS, UNIT_TYPE, type UnitStatus, type UnitType } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatSAR } from '@/lib/utils/format';
@@ -55,6 +50,8 @@ function UnitsPageContent() {
   const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { can } = useCan();
+  const { cities, labelOf } = useCities();
 
   const [view, setView] = useState<View>('grid');
   // Seeded from ?status=<status> so the approvals counters can deep-link the units
@@ -71,7 +68,6 @@ function UnitsPageContent() {
   const [result, setResult] = useState<Paginated<Unit> | null>(null);
   const [stats, setStats] = useState<UnitStats | null>(null);
   const [error, setError] = useState(false);
-  const [adding, setAdding] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
@@ -129,7 +125,7 @@ function UnitsPageContent() {
         key: 'city',
         header: t.units.city,
         width: '10%',
-        cell: (row) => t.cities[row.city as keyof typeof t.cities] ?? row.city,
+        cell: (row) => labelOf(row.city),
       },
       {
         key: 'type',
@@ -175,7 +171,7 @@ function UnitsPageContent() {
         cell: (row) => <StatusBadge status={row.status} />,
       },
     ],
-    [t],
+    [t, labelOf],
   );
 
   function exportCsv() {
@@ -223,7 +219,10 @@ function UnitsPageContent() {
         value={city}
         onChange={setCity}
         allLabel={t.units.allCities}
-        options={SAUDI_CITIES.map((value) => ({ value, label: t.cities[value] }))}
+        options={(cities ?? []).map((option) => ({
+          value: option.key,
+          label: labelOf(option.key),
+        }))}
       />
 
       <div className="ms-auto inline-flex rounded-xl border border-hairline p-1">
@@ -256,10 +255,12 @@ function UnitsPageContent() {
             <Button variant="secondary" onClick={exportCsv} disabled={!result?.items.length}>
               {t.common.export}
             </Button>
-            <Button onClick={() => setAdding(true)}>
-              <Home className="h-4 w-4" />
-              {t.units.add}
-            </Button>
+            {can('units.manage') && (
+              <Button onClick={() => router.push('/units/new')}>
+                <Home className="h-4 w-4" />
+                {t.units.add}
+              </Button>
+            )}
           </>
         }
       />
@@ -333,8 +334,6 @@ function UnitsPageContent() {
           {pager && <Card className="p-4">{pager}</Card>}
         </>
       )}
-
-      <AddUnitDialog open={adding} onOpenChange={setAdding} onCreated={reload} />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import type {
   BookingListParams,
   BookingStats,
   Cancellation,
+  City,
   CursorPage,
   CancellationListParams,
   CancellationStats,
@@ -38,10 +39,13 @@ import type {
   ReportsSummary,
   ReportsSummaryResponse,
   Unit,
+  UnitCreateBody,
   UnitDetail,
-  UnitDraft,
   UnitListParams,
+  UnitPatchBody,
   UnitStats,
+  UploadedFile,
+  UploadKind,
   User,
   UserDetail,
   UserListParams,
@@ -53,7 +57,7 @@ import {
   normalizeAdminProfile,
   type IncomingAdminProfile,
 } from '@/lib/auth/permissions';
-import { USE_MOCK, request } from './client';
+import { ApiError, USE_MOCK, request } from './client';
 import { endpoints } from './endpoints';
 
 type Ok = { ok: true };
@@ -217,11 +221,82 @@ export const unitsApi = {
       ? mock.mockUnits.unpublish(id, reason)
       : request<Ok>(endpoints.units.unpublish(id), { method: 'POST', body: { reason } }),
 
-  /** Admin-listed units are Mamsa-owned and start as a draft, like a partner's. */
-  create: (draft: UnitDraft) =>
+  /**
+   * Creates a Mamsa-owned unit as a draft, and **returns the unit** — a `201` with the
+   * full record, not `{ ok: true }`. Keep the `id`: it is the only handle on the unit
+   * you just made, and a failed `submit` must retry against it rather than create a
+   * second draft.
+   *
+   * Never send `mamsaOwned` — the server sets it.
+   */
+  create: (body: UnitCreateBody) =>
     USE_MOCK
-      ? mock.mockUnits.create(draft)
-      : request<Ok>(endpoints.units.create, { method: 'POST', body: draft as never }),
+      ? mock.mockUnits.create(body)
+      : request<UnitDetail>(endpoints.units.create, { method: 'POST', body: body as never }),
+
+  /**
+   * Partial update. Only the fields that actually changed should be sent: an absent key
+   * means "unchanged", so round-tripping the whole form risks rewriting values nobody
+   * touched. Editing an approved unit returns it to `pending_review`, and a unit that is
+   * already under review answers `409`.
+   */
+  update: (id: ID, body: UnitPatchBody) =>
+    USE_MOCK
+      ? mock.mockUnits.update(id, body)
+      : request<UnitDetail>(endpoints.units.update(id), {
+          method: 'PATCH',
+          body: body as never,
+        }),
+
+  /** Drafts only. Anything past draft has history and answers `409`. */
+  remove: (id: ID) =>
+    USE_MOCK
+      ? mock.mockUnits.remove(id)
+      : request<Ok>(endpoints.units.remove(id), { method: 'DELETE' }),
+
+  /**
+   * Moves a draft into the review queue. Returns every remaining gap at once in
+   * `error.fields`, so the caller can mark all the offending steps rather than walking
+   * the admin through them one rejection at a time.
+   */
+  submit: (id: ID) =>
+    USE_MOCK
+      ? mock.mockUnits.submit(id)
+      : request<UnitDetail>(endpoints.units.submit(id), { method: 'POST', body: {} as never }),
+};
+
+export const citiesApi = {
+  list: () => (USE_MOCK ? mock.mockCities.list() : request<City[]>(endpoints.cities.list)),
+};
+
+/**
+ * Two-step upload: ask for a signed URL, then PUT the raw bytes straight to it.
+ *
+ * The signature in the URL **is** the authorisation, which is why the second call is a
+ * bare `fetch` with `credentials: 'omit'` rather than `request()`. Sending the admin
+ * session alongside a pre-signed URL is what breaks this in every codebase that wraps
+ * it in the configured client out of habit.
+ */
+export const uploadsApi = {
+  upload: async (kind: UploadKind, file: File): Promise<UploadedFile> => {
+    if (USE_MOCK) return mock.mockUploads.upload(kind, file);
+
+    // Presigned at pick time, not when the wizard opens: the URL expires in 30 minutes
+    // and a six-minute form plus a distracted admin outlives that.
+    const { uploadUrl, fileId } = await request<{ uploadUrl: string; fileId: string }>(
+      endpoints.uploads.presign,
+      {
+        method: 'POST',
+        body: { kind, fileName: file.name, mimeType: file.type, size: file.size } as never,
+      },
+    );
+
+    // Raw File, never FormData — a multipart wrapper fails the server's magic-byte check.
+    const put = await fetch(uploadUrl, { method: 'PUT', body: file, credentials: 'omit' });
+    if (!put.ok) throw new ApiError('تعذّر رفع الملف.', put.status, 'UPLOAD_FAILED');
+
+    return { fileId, fileName: file.name };
+  },
 };
 
 /**
