@@ -1,5 +1,5 @@
 import { isValidLatLng, roundCoord } from '@/lib/units/geo';
-import { looksLikePlusCode, recoverPlusCode } from '@/lib/units/plus-code';
+import { findPlusCode, recoverPlusCode } from '@/lib/units/plus-code';
 import type { LatLng } from '@/types';
 
 export type ParsedLocation =
@@ -25,8 +25,10 @@ export function parseLocationInput(value: string, reference: LatLng): ParsedLoca
   const fromCoords = pointFromCoordinatePair(input);
   if (fromCoords) return { kind: 'point', point: fromCoords, source: 'coords' };
 
-  if (looksLikePlusCode(input)) {
-    const recovered = recoverPlusCode(input, reference);
+  // Anywhere in the line, so the address Google copies alongside the code still works.
+  const plusCode = findPlusCode(input);
+  if (plusCode) {
+    const recovered = recoverPlusCode(plusCode, reference);
     if (recovered && isValidLatLng(recovered)) {
       return { kind: 'point', point: round(recovered), source: 'plusCode' };
     }

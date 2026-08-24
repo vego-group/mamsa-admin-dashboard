@@ -90,10 +90,33 @@ describe('parseLocationInput', () => {
   });
 
   it('reads a plus code', () => {
-    const parsed = parseLocationInput('VM35+QFM', RIYADH);
+    // The exact place from the screenshot. Verified against Google's own reading of it:
+    // the latitude matches the URL's viewport to the last decimal, and the 260m of
+    // longitude between them is the offset Google leaves because its map canvas runs
+    // behind the side panel — so the pin sits east of the canvas centre.
+    expect(parseLocationInput('VM35+QFM', RIYADH)).toEqual({
+      kind: 'point',
+      source: 'plusCode',
+      point: { lat: 24.854463, lng: 46.658672 },
+    });
+  });
 
-    expect(parsed.kind).toBe('point');
-    if (parsed.kind === 'point') expect(parsed.source).toBe('plusCode');
+  it('reads a plus code out of the line Google copies with it', () => {
+    // What the share button actually hands you — the code plus its address.
+    const parsed = parseLocationInput('VM35+QFM, An Narjis, Riyadh Saudi Arabia', RIYADH);
+
+    expect(parsed).toEqual({
+      kind: 'point',
+      source: 'plusCode',
+      point: { lat: 24.854463, lng: 46.658672 },
+    });
+  });
+
+  it('does not mistake ordinary Arabic or English text for a code', () => {
+    // The alphabet has no vowels, so prose cannot accidentally form one — but the
+    // extractor still has to refuse a stray plus sign between two words.
+    expect(parseLocationInput('حي النرجس + الرياض', RIYADH).kind).toBe('query');
+    expect(parseLocationInput('Villa 75 + garden', RIYADH).kind).toBe('query');
   });
 
   it('treats a district name as something to search for', () => {

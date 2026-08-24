@@ -27,6 +27,21 @@ export function looksLikePlusCode(value: string): boolean {
   return CODE_PATTERN.test(value.trim());
 }
 
+/**
+ * Pulls a code out of a longer line — Google's own copy button hands you
+ * `VM35+QFM, An Narjis, Riyadh Saudi Arabia`, not a bare code.
+ *
+ * The alphabet omits vowels and every look-alike character, so a token of these letters
+ * around a `+` is not something ordinary text produces by accident.
+ */
+export function findPlusCode(text: string): string | null {
+  const match = text.match(
+    /(^|[\s,;(])([23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,7})(?=$|[\s,;)])/i,
+  );
+
+  return match ? match[2] : null;
+}
+
 /** A code carrying its own position, rather than one needing a nearby reference. */
 export function isFullPlusCode(value: string): boolean {
   const code = value.trim();

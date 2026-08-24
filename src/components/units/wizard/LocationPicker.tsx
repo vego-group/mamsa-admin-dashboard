@@ -29,6 +29,27 @@ const MAX_ZOOM = 19;
 const PINNED_ZOOM = 17;
 const COUNTRY_ZOOM = 5;
 
+/**
+ * Zoom levels per pixel of wheel travel.
+ *
+ * A mouse notch reports ~100px, so one notch moves a third of a level and a deliberate
+ * flick of three moves one. Stepping a whole level per **event** — which is what this
+ * did — meant a trackpad, which fires a dozen events per gesture, shot from the country
+ * to the rooftop in one flick.
+ */
+const ZOOM_PER_WHEEL_PIXEL = 1 / 300;
+/** No single gesture may move more than this, however hard it is thrown. */
+const MAX_ZOOM_PER_EVENT = 0.6;
+
+/** Wheel deltas arrive in pixels, lines or pages depending on the device. */
+function wheelPixels(event: WheelEvent): number {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * 400;
+  return event.deltaY;
+}
+
+const clampZoom = (value: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+
 const lngToTileX = (lng: number, zoom: number) => ((lng + 180) / 360) * 2 ** zoom;
 
 const latToTileY = (lat: number, zoom: number) => {
@@ -189,11 +210,15 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     );
   }
 
-  /** Zooms about the pointer, so the thing under the cursor stays under the cursor. */
+  /**
+   * Zooms about the pointer, so whatever is under the cursor stays under it.
+   * `delta` is in zoom levels and may be fractional — the map renders at fractional
+   * zoom, which is what makes a wheel gesture feel continuous rather than steppy.
+   */
   const zoomAt = useCallback(
     (screenX: number, screenY: number, delta: number) => {
       setZoom((currentZoom) => {
-        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom + delta));
+        const nextZoom = clampZoom(currentZoom + delta);
         if (nextZoom === currentZoom) return currentZoom;
 
         const node = containerRef.current;
@@ -232,7 +257,11 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = node.getBoundingClientRect();
-      zoomAt(event.clientX - rect.left, event.clientY - rect.top, event.deltaY < 0 ? 1 : -1);
+      const delta = Math.max(
+        -MAX_ZOOM_PER_EVENT,
+        Math.min(MAX_ZOOM_PER_EVENT, -wheelPixels(event) * ZOOM_PER_WHEEL_PIXEL),
+      );
+      zoomAt(event.clientX - rect.left, event.clientY - rect.top, delta);
     };
 
     node.addEventListener('wheel', onWheel, { passive: false });
@@ -402,15 +431,16 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
 
         <div className="absolute end-3 top-3 z-10 flex flex-col gap-2">
           <div className="flex flex-col overflow-hidden rounded-xl border border-hairline bg-white shadow-card">
+            {/* Buttons snap to whole levels; the wheel is the fine control. */}
             <MapButton
               label={t.unitWizard.zoomIn}
-              onClick={() => zoomAt(size.width / 2, size.height / 2, 1)}
+              onClick={() => setZoom((current) => clampZoom(Math.floor(current) + 1))}
             >
               <Plus className="h-4 w-4" />
             </MapButton>
             <MapButton
               label={t.unitWizard.zoomOut}
-              onClick={() => zoomAt(size.width / 2, size.height / 2, -1)}
+              onClick={() => setZoom((current) => clampZoom(Math.ceil(current) - 1))}
             >
               <Minus className="h-4 w-4" />
             </MapButton>
@@ -432,7 +462,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
         </span>
 
         <span className="absolute bottom-1 end-2 z-10 rounded bg-white/80 px-1.5 text-[10px] tabular-nums text-slate-500">
-          z{zoom}
+          z{zoom.toFixed(1)}
         </span>
       </div>
 
@@ -494,7 +524,14 @@ function MapButton({
   );
 }
 
-/** The tile grid covering the viewport, one image per 256px square. */
+/**
+ * The tile grid covering the viewport.
+ *
+ * Tiles only exist at whole zoom levels, but the map runs at a fractional one so the
+ * wheel feels continuous. So: fetch the nearest whole level and draw each tile scaled by
+ * the fraction. Positions still come from the fractional zoom, which keeps the pin and
+ * the streets under it in agreement at every point of a gesture.
+ */
 function Tiles({
   originX,
   originY,
@@ -506,11 +543,15 @@ function Tiles({
   zoom: number;
   size: { width: number; height: number };
 }) {
-  const span = 2 ** zoom;
-  const firstX = Math.floor(originX / TILE);
-  const firstY = Math.floor(originY / TILE);
-  const lastX = Math.floor((originX + size.width) / TILE);
-  const lastY = Math.floor((originY + size.height) / TILE);
+  const tileZoom = clampZoom(Math.round(zoom));
+  const scale = 2 ** (zoom - tileZoom);
+  const scaled = TILE * scale;
+
+  const span = 2 ** tileZoom;
+  const firstX = Math.floor(originX / scaled);
+  const firstY = Math.floor(originY / scaled);
+  const lastX = Math.floor((originX + size.width) / scaled);
+  const lastY = Math.floor((originY + size.height) / scaled);
 
   const tiles: React.ReactNode[] = [];
   for (let x = firstX; x <= lastX; x += 1) {
@@ -523,14 +564,19 @@ function Tiles({
       tiles.push(
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          key={`${zoom}/${x}/${y}`}
-          src={`https://tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`}
+          key={`${tileZoom}/${x}/${y}`}
+          src={`https://tile.openstreetmap.org/${tileZoom}/${wrappedX}/${y}.png`}
           alt=""
-          width={TILE}
-          height={TILE}
           draggable={false}
           className="absolute max-w-none"
-          style={{ left: x * TILE - originX, top: y * TILE - originY }}
+          style={{
+            left: x * scaled - originX,
+            top: y * scaled - originY,
+            // The extra pixel hides the hairline gaps sub-pixel positions leave between
+            // neighbouring tiles at a fractional scale.
+            width: scaled + 1,
+            height: scaled + 1,
+          }}
         />,
       );
     }
