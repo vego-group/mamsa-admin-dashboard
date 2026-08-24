@@ -1,30 +1,32 @@
 'use client';
 
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, MapPin, Minus, Plus, Search } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Crosshair, ExternalLink, Loader2, MapPin, Minus, Plus, Search } from 'lucide-react';
 import { useT } from '@/i18n';
 import { useUiStore } from '@/stores/uiStore';
 import { isInsideSaudi, isValidLatLng, roundCoord, SAUDI_BOUNDS } from '@/lib/units/geo';
+import { parseLocationInput } from '@/lib/units/parse-location';
 import type { LatLng } from '@/types';
 
 /**
  * A pin on a map, built from raw OpenStreetMap tiles.
  *
- * The partner dashboard reaches for Leaflet here. This console does not: the whole
- * requirement is pan, zoom and one draggable marker, which is a hundred lines of
- * Web-Mercator arithmetic and no new dependency — and the coordinates it produces
- * cannot even be stored yet (see `ADMIN_UNIT_CREATE_ACCEPTS_FULL_DRAFT`). Two packages
- * to carry a value the API discards is the wrong trade; the maths is below and stays.
+ * The partner dashboard reaches for Leaflet. This does not: the requirement is pan,
+ * zoom and one draggable marker, which is a hundred lines of Web-Mercator arithmetic and
+ * no new dependency.
  *
- * Tiles come from openstreetmap.org under its usage policy — fine for an internal
- * console at this volume, and the one line to change if it ever needs a keyed provider.
+ * The search box matters more than the map does. Nobody finds a Saudi building by typing
+ * a district into a geocoder — they find it in Google Maps first. So the box takes a
+ * pasted Maps link, a coordinate pair or a Plus Code and resolves them **offline**,
+ * falling back to Nominatim only for a plain place name.
  */
 
 const TILE = 256;
 const MIN_ZOOM = 4;
-const MAX_ZOOM = 18;
-/** Street level once a point exists; country level while it does not. */
-const PINNED_ZOOM = 14;
+/** OSM serves tiles to z19 — street level, individual buildings. */
+const MAX_ZOOM = 19;
+/** Where a resolved point lands you: close enough to see the building. */
+const PINNED_ZOOM = 17;
 const COUNTRY_ZOOM = 5;
 
 const lngToTileX = (lng: number, zoom: number) => ((lng + 180) / 360) * 2 ** zoom;
@@ -69,10 +71,13 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
   const [searchError, setSearchError] = useState(false);
   const [noMatch, setNoMatch] = useState(false);
   const [reverseLoading, setReverseLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; center: LatLng; moved: boolean } | null>(null);
   const pinDragRef = useRef(false);
+  const centerRef = useRef(center);
+  centerRef.current = center;
 
   useLayoutEffect(() => {
     const node = containerRef.current;
@@ -126,9 +131,28 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     [locale, onChange],
   );
 
+  /** Drops the pin and brings the map to it. */
+  const goTo = useCallback(
+    (next: LatLng, address?: string) => {
+      setResults([]);
+      setNoMatch(false);
+      setCenter(next);
+      setZoom((current) => Math.max(current, PINNED_ZOOM));
+      if (address) onChange(next, address);
+      else void commit(next);
+    },
+    [commit, onChange],
+  );
+
   async function search() {
-    const term = query.trim();
-    if (!term) return;
+    const parsed = parseLocationInput(query, centerRef.current);
+
+    // A link, a coordinate pair or a Plus Code already *is* the answer — no request.
+    if (parsed.kind === 'point') {
+      goTo(parsed.point);
+      return;
+    }
+    if (!parsed.query) return;
 
     setSearching(true);
     setSearchError(false);
@@ -136,7 +160,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     try {
       const url =
         'https://nominatim.openstreetmap.org/search?format=json' +
-        `&q=${encodeURIComponent(term)}&countrycodes=sa&limit=5&addressdetails=1&accept-language=${locale}`;
+        `&q=${encodeURIComponent(parsed.query)}&countrycodes=sa&limit=5&addressdetails=1&accept-language=${locale}`;
       const response = await fetch(url);
       const data = (await response.json()) as NominatimResult[];
       setResults(data);
@@ -149,14 +173,71 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     }
   }
 
-  function choose(result: NominatimResult) {
-    const next = { lat: roundCoord(Number(result.lat)), lng: roundCoord(Number(result.lon)) };
-    setResults([]);
-    setQuery(result.display_name);
-    setCenter(next);
-    setZoom((current) => Math.max(current, PINNED_ZOOM));
-    onChange(next, result.display_name);
+  function locate() {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        goTo({
+          lat: roundCoord(position.coords.latitude),
+          lng: roundCoord(position.coords.longitude),
+        });
+      },
+      () => setLocating(false),
+      { enableHighAccuracy: true, timeout: 10_000 },
+    );
   }
+
+  /** Zooms about the pointer, so the thing under the cursor stays under the cursor. */
+  const zoomAt = useCallback(
+    (screenX: number, screenY: number, delta: number) => {
+      setZoom((currentZoom) => {
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom + delta));
+        if (nextZoom === currentZoom) return currentZoom;
+
+        const node = containerRef.current;
+        if (node) {
+          const width = node.clientWidth;
+          const height = node.clientHeight;
+          const currentCenter = centerRef.current;
+          const anchorX = lngToTileX(currentCenter.lng, currentZoom) * TILE - width / 2 + screenX;
+          const anchorY = latToTileY(currentCenter.lat, currentZoom) * TILE - height / 2 + screenY;
+          const scale = 2 ** (nextZoom - currentZoom);
+
+          setCenter({
+            lat: tileYToLat(
+              (anchorY * scale - (screenY - height / 2)) / TILE,
+              nextZoom,
+            ),
+            lng: tileXToLng(
+              (anchorX * scale - (screenX - width / 2)) / TILE,
+              nextZoom,
+            ),
+          });
+        }
+
+        return nextZoom;
+      });
+    },
+    [],
+  );
+
+  // Registered natively, not through React: a passive listener cannot call
+  // preventDefault, and without that the wizard scrolls away under the cursor.
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = node.getBoundingClientRect();
+      zoomAt(event.clientX - rect.left, event.clientY - rect.top, event.deltaY < 0 ? 1 : -1);
+    };
+
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
 
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (pinDragRef.current) return;
@@ -232,13 +313,20 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           </button>
         </div>
 
+        <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{t.unitWizard.searchHint}</p>
+
         {results.length > 0 && (
           <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-hairline bg-white shadow-pop">
             {results.map((result) => (
               <li key={`${result.lat},${result.lon}`}>
                 <button
                   type="button"
-                  onClick={() => choose(result)}
+                  onClick={() =>
+                    goTo(
+                      { lat: roundCoord(Number(result.lat)), lng: roundCoord(Number(result.lon)) },
+                      result.display_name,
+                    )
+                  }
                   className="flex w-full items-start gap-2 px-4 py-2.5 text-start text-sm text-slate-700 transition hover:bg-surface-muted"
                 >
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
@@ -268,7 +356,11 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           dragRef.current = null;
           pinDragRef.current = false;
         }}
-        className="relative h-72 touch-none select-none overflow-hidden rounded-2xl border border-hairline bg-surface-muted"
+        onDoubleClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          zoomAt(event.clientX - rect.left, event.clientY - rect.top, 1);
+        }}
+        className="relative h-[26rem] cursor-crosshair touch-none select-none overflow-hidden rounded-2xl border border-hairline bg-surface-muted"
         role="application"
         aria-label={t.unitWizard.enterAddressToPin}
       >
@@ -308,24 +400,40 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           </div>
         )}
 
-        <div className="absolute end-3 top-3 z-10 flex flex-col overflow-hidden rounded-xl border border-hairline bg-white shadow-card">
-          <ZoomButton
-            label={t.unitWizard.zoomIn}
-            onClick={() => setZoom((current) => Math.min(MAX_ZOOM, current + 1))}
-          >
-            <Plus className="h-4 w-4" />
-          </ZoomButton>
-          <ZoomButton
-            label={t.unitWizard.zoomOut}
-            onClick={() => setZoom((current) => Math.max(MIN_ZOOM, current - 1))}
-          >
-            <Minus className="h-4 w-4" />
-          </ZoomButton>
+        <div className="absolute end-3 top-3 z-10 flex flex-col gap-2">
+          <div className="flex flex-col overflow-hidden rounded-xl border border-hairline bg-white shadow-card">
+            <MapButton
+              label={t.unitWizard.zoomIn}
+              onClick={() => zoomAt(size.width / 2, size.height / 2, 1)}
+            >
+              <Plus className="h-4 w-4" />
+            </MapButton>
+            <MapButton
+              label={t.unitWizard.zoomOut}
+              onClick={() => zoomAt(size.width / 2, size.height / 2, -1)}
+            >
+              <Minus className="h-4 w-4" />
+            </MapButton>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-hairline bg-white shadow-card">
+            <MapButton label={t.unitWizard.useMyLocation} onClick={locate}>
+              {locating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Crosshair className="h-4 w-4" />
+              )}
+            </MapButton>
+          </div>
         </div>
 
-        <p className="absolute bottom-1 start-2 z-10 text-[10px] text-slate-500" dir="ltr">
+        <span className="absolute bottom-1 start-2 z-10 text-[10px] text-slate-500" dir="ltr">
           (c) OpenStreetMap contributors
-        </p>
+        </span>
+
+        <span className="absolute bottom-1 end-2 z-10 rounded bg-white/80 px-1.5 text-[10px] tabular-nums text-slate-500">
+          z{zoom}
+        </span>
       </div>
 
       <p className="text-xs text-slate-500">{t.unitWizard.clickMapHint}</p>
@@ -337,21 +445,33 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
       )}
 
       {point && !outsideBounds && (
-        <div className="rounded-2xl bg-brand-soft px-4 py-3">
-          <p className="text-sm font-medium text-brand">
-            {reverseLoading ? t.unitWizard.searching : t.unitWizard.locationConfirmed}
-          </p>
-          <p className="text-xs text-slate-600">{t.unitWizard.saudiArabia}</p>
-          <p className="mt-1 text-xs tabular-nums text-slate-500" dir="ltr">
-            {point.lat.toFixed(4)}, {point.lng.toFixed(4)}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-soft px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-brand">
+              {reverseLoading ? t.unitWizard.searching : t.unitWizard.locationConfirmed}
+            </p>
+            <p className="mt-1 text-xs tabular-nums text-slate-600" dir="ltr">
+              {point.lat.toFixed(6)}, {point.lng.toFixed(6)}
+            </p>
+          </div>
+
+          {/* The admin found the place in Google Maps; let them check it landed there. */}
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lng}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-brand/30 bg-white px-3 py-1.5 text-xs font-semibold text-brand transition hover:bg-white/70"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t.unitWizard.verifyOnGoogle}
+          </a>
         </div>
       )}
     </div>
   );
 }
 
-function ZoomButton({
+function MapButton({
   label,
   onClick,
   children,
@@ -367,7 +487,7 @@ function ZoomButton({
       title={label}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className="grid h-8 w-8 place-items-center text-slate-600 transition hover:bg-surface-muted"
+      className="grid h-9 w-9 place-items-center text-slate-600 transition hover:bg-surface-muted"
     >
       {children}
     </button>

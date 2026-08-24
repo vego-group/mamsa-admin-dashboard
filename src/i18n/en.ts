@@ -690,7 +690,13 @@ export const en = {
     s3Title: 'Location',
     s3Sub: 'The unit must sit inside Saudi Arabia to be listed on the platform.',
     searchAddress: 'Search for the address',
-    searchPh: 'Search by district or city — e.g. Al Rabiah, Riyadh',
+    searchPh: 'Paste a Google Maps link, a Plus Code, coordinates, or search a place',
+    // The realistic workflow: the admin already found the place in Google Maps. The
+    // first three of these resolve offline; only a place name needs the geocoder.
+    searchHint:
+      'A Google Maps link, a Plus Code (VM35+QFM), or coordinates (24.854463, 46.656097) pin the exact spot without searching.',
+    useMyLocation: 'Use my location',
+    verifyOnGoogle: 'Check on Google Maps',
     searchBtn: 'Search',
     searching: 'Searching…',
     noMatchTitle: "We couldn't find that address",
@@ -698,11 +704,11 @@ export const en = {
     // so short codes and building numbers return empty every time. Painting a dead end
     // red teaches an admin to distrust a map that is working exactly as designed.
     noMatchHint:
-      "Pin the unit by clicking directly on the map. The search doesn't support National Address short codes (like RUKC8514) or building numbers.",
+      "Find the place in Google Maps and paste its link or Plus Code above — that pins it exactly. Name search doesn't cover National Address short codes (like RUKC8514) or building numbers.",
     geocodeError: "Couldn't search for the address right now",
     enterAddressToPin: 'Click the map to pin the unit',
     saudiOnly: 'Saudi Arabia only',
-    clickMapHint: 'Click the map or drag the pin to fine-tune the location',
+    clickMapHint: 'Click to drop the pin, drag to pan, scroll or double-click to zoom in.',
     outsideSaudi: 'This location is outside Saudi Arabia',
     locationConfirmed: 'Location confirmed',
     saudiArabia: 'Kingdom of Saudi Arabia',

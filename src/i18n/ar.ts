@@ -667,17 +667,22 @@ export const ar: Dictionary = {
     s3Title: 'الموقع',
     s3Sub: 'يجب أن تقع الوحدة داخل السعودية لتُدرج على المنصة.',
     searchAddress: 'البحث عن العنوان',
-    searchPh: 'ابحث بالحي أو المدينة — مثال: حي الرابية، الرياض',
+    searchPh: 'الصق رابط خرائط جوجل أو Plus Code أو إحداثيات، أو ابحث باسم المكان',
+    // See the note in en.ts — the first three resolve without a request.
+    searchHint:
+      'رابط من خرائط جوجل، أو Plus Code (‏VM35+QFM)، أو إحداثيات (‏24.854463, 46.656097) تحدّد المكان بالضبط بدون بحث.',
+    useMyLocation: 'موقعي الحالي',
+    verifyOnGoogle: 'تأكّد على خرائط جوجل',
     searchBtn: 'بحث',
     searching: 'جاري البحث…',
     noMatchTitle: 'لم نعثر على هذا العنوان',
     // See the note in en.ts — a dead end in the search is not a fault to paint red.
     noMatchHint:
-      'حدّد موقع الوحدة بالضغط مباشرة على الخريطة. البحث لا يدعم العنوان الوطني المختصر (مثل RUKC8514) ولا أرقام المباني.',
+      'افتح المكان في خرائط جوجل والصق رابطه أو الـ Plus Code بالأعلى — ده بيحدّده بالضبط. البحث بالاسم لا يغطي العنوان الوطني المختصر (مثل RUKC8514) ولا أرقام المباني.',
     geocodeError: 'تعذّر البحث عن العنوان الآن',
     enterAddressToPin: 'اضغط على الخريطة لتحديد موقع الوحدة',
     saudiOnly: 'داخل السعودية فقط',
-    clickMapHint: 'اضغط على الخريطة أو اسحب الدبوس لتحديد الموقع بدقة',
+    clickMapHint: 'اضغط لوضع الدبوس، اسحب للتحريك، واستخدم عجلة الماوس أو الضغط المزدوج للتكبير.',
     outsideSaudi: 'هذا الموقع خارج حدود المملكة العربية السعودية',
     locationConfirmed: 'تم تأكيد الموقع',
     saudiArabia: 'المملكة العربية السعودية',
