@@ -41,8 +41,10 @@ export const MAX_UPLOAD_MB = 10;
  * does the server, and an Arabic description gets the full 2000 rather than the ~666 a
  * byte-counting rule would have allowed. A newline is one character on both sides.
  *
- * **Live on staging, which is what `.env.local` points at. Production is still on 500
- * until the backend deploys.** Against production a formatted description will `422`.
+ * Live on staging **and on production** since 2026-08-26, deployed together with the
+ * removal of a `strip_tags` call that had been silently eating any description
+ * containing a `<` — including the `>` that opens a note. There is no environment left
+ * where this number is wrong.
  */
 export const MAX_DESCRIPTION = 2000;
 
@@ -298,17 +300,32 @@ export function toCreateBody(state: UnitWizardState): UnitCreateBody {
   };
 }
 
-/**
- * The fields `PATCH` accepts `null` on, as a set for the loop below.
- *
- * Derived from the exported type rather than retyped, so adding a field to one is adding
- * it to both — and neither can quietly grow past what the backend actually documented.
- */
 const CLEARABLE_FIELDS = new Set<ClearableUnitField>([
   'description',
   'address',
   'tourismLicenseNumber',
+  'amenities',
 ]);
+
+/**
+ * How each clearable field is emptied: `null` for the text fields, `[]` for the list.
+ *
+ * The server accepts both spellings on both shapes, so this is a choice rather than a
+ * constraint — and it is made twice for the same reason. `null` says "no value" on a
+ * string, which `""` does not; `[]` says "this set, and it is empty" on a list, which is
+ * what replacing a set with nothing means.
+ *
+ * The deployment state decided the tie. `[]` on an array has always worked in production;
+ * `null` on an array is built but not yet deployed there (backend reply 2026-08-26,
+ * status table). Sending `null` for amenities today would `422` against production, so
+ * the spelling that works everywhere wins until that is moot.
+ *
+ * A function, not a table, so `amenities` gets a fresh array each call and no shared
+ * value can be mutated into the next patch.
+ */
+function clearValueFor(key: ClearableUnitField): null | Amenity[] {
+  return key === 'amenities' ? [] : null;
+}
 
 /**
  * Only what actually changed.
@@ -336,13 +353,15 @@ export function toPatchBody(state: UnitWizardState, original: UnitWizardState): 
       did not fire, and the request knocked an approved unit back to `pending_review` to
       change nothing at all.
 
-      `null` is the spelling that clears (backend reply 2026-08-26 §5), but only on the
-      three fields it was documented for. Anything else emptied is still skipped rather
-      than guessed at — see `ClearableUnitField`.
+      `clearValueFor` holds the spelling per field. Anything not in `CLEARABLE_FIELDS` is
+      still skipped rather than guessed at — `photoFileIds` most of all, where an empty
+      array means "delete every photo". See `ClearableUnitField` for what that does and
+      does not protect; the short version is that it stops one destructive spelling, not
+      the destructive behaviour.
     */
     if (next[key] === undefined) {
       if (!CLEARABLE_FIELDS.has(key as ClearableUnitField)) continue;
-      Object.assign(patch, { [key]: null });
+      Object.assign(patch, { [key]: clearValueFor(key as ClearableUnitField) });
       continue;
     }
 

@@ -657,25 +657,43 @@ export interface UnitDraftExtras {
 export type UnitCreateBody = UnitDraft & UnitDraftExtras;
 
 /**
- * The optional fields a `PATCH` may clear by sending `null`.
+ * The optional fields a `PATCH` may empty.
  *
- * These three and no others. The backend documented `null` for exactly this set (reply
- * 2026-08-26 §5) and said nothing about the rest, and a `null` a validator does not
- * expect is a `422` on the last step of a five-step form — the same class of guess that
- * put a fictional `max:500` in this console for a month.
+ * These four and no others, each confirmed by the backend rather than guessed at — the
+ * same class of guess that put a fictional `max:500` in this console for a month.
+ *
+ * `photoFileIds` is deliberately absent even though the server empties it the same way.
+ * An emptied gallery in the form is not always an intentionally emptied gallery: a unit
+ * still holding a photo from before the upload flow has no id to re-send for it, so it
+ * cannot appear in any list we build.
+ *
+ * Note what this does **not** buy. `syncPhotos()` deletes every image row and rebuilds
+ * from the list on *every* write, so a photo with no `fileId` is lost to any `PATCH`
+ * carrying `photoFileIds` at all — not only to an empty one. Keeping this key out of the
+ * clearable set stops one destructive spelling; the only thing that actually preserves
+ * such a photo is not sending the key. That is what `hasUnmergeablePhotos` warns about,
+ * and it is a warning rather than a block on purpose: refusing the write would make
+ * adding a photo to those units fail silently, which is worse than saying so.
  */
-export type ClearableUnitField = 'description' | 'address' | 'tourismLicenseNumber';
+export type ClearableUnitField =
+  | 'description'
+  | 'address'
+  | 'tourismLicenseNumber'
+  | 'amenities';
+
+/** The clearable fields whose empty value is spelled `null` rather than `[]`. */
+type NullClearableUnitField = Exclude<ClearableUnitField, 'amenities'>;
 
 /**
  * What `PATCH /admin/units/{id}` receives — only the fields that actually changed.
  *
- * An absent key means "unchanged", which is why clearing a field needs a value at all:
- * `undefined` disappears in `JSON.stringify` and arrives as no key. `null` is the one
- * spelling that says "empty this". (`""` also works server-side — Laravel's
- * `ConvertEmptyStringsToNull` runs before validation — but `null` says what it means.)
+ * An absent key means "unchanged", which is why emptying a field needs a value at all:
+ * `undefined` disappears in `JSON.stringify` and arrives as no key. The server reads
+ * `null` and `[]` alike as "empty this" on every clearable field; which spelling this
+ * console sends is decided in `clearValueFor`.
  */
-export type UnitPatchBody = Partial<Omit<UnitCreateBody, ClearableUnitField>> & {
-  [K in ClearableUnitField]?: UnitCreateBody[K] | null;
+export type UnitPatchBody = Partial<Omit<UnitCreateBody, NullClearableUnitField>> & {
+  [K in NullClearableUnitField]?: UnitCreateBody[K] | null;
 };
 
 export type UploadKind = 'unit_photo' | 'license_pdf';

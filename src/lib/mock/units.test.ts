@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UNIT_STATUS, UNIT_TYPE } from '@/lib/constants';
+import { AMENITY, UNIT_STATUS, UNIT_TYPE } from '@/lib/constants';
+import { ar } from '@/i18n/ar';
 import { mockUnits } from './index';
 
 describe('mockUnits.list', () => {
@@ -118,6 +119,33 @@ describe('mockUnits.update — clearing an optional field', () => {
 
     expect(updated.tourismPermitNo).toBe(before.tourismPermitNo);
     expect(updated.address).toBe(before.address);
+  });
+
+  /**
+   * The same write/read split as the licence number, and a nastier one: the write side
+   * sends amenity *keys* under `amenities`, while the read side uses that name for the
+   * stored Arabic *labels* and puts the keys in `amenityKeys`. A naive spread therefore
+   * emptied the labels, left the keys untouched — and the wizard reads the keys, so every
+   * chip came back on reload.
+   */
+  it('clears both the amenity keys and the labels read beside them', async () => {
+    const unit = await editableUnit();
+    const before = await mockUnits.get(unit.id);
+    expect(before.amenityKeys.length).toBeGreaterThan(0);
+
+    const updated = await mockUnits.update(unit.id, { amenities: [] });
+
+    expect(updated.amenityKeys).toEqual([]);
+    expect(updated.amenities).toEqual([]);
+  });
+
+  it('keeps the keys and their labels in step when amenities are replaced', async () => {
+    const unit = await editableUnit();
+    const updated = await mockUnits.update(unit.id, { amenities: [AMENITY.WIFI, AMENITY.POOL] });
+
+    expect(updated.amenityKeys).toEqual([AMENITY.WIFI, AMENITY.POOL]);
+    // Labels, not raw keys — a spread used to put `['wifi','pool']` in this field.
+    expect(updated.amenities).toEqual([ar.amenities.wifi, ar.amenities.pool]);
   });
 
   it('writes a new licence number under the read-side name too', async () => {

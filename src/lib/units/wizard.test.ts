@@ -435,7 +435,7 @@ describe('clearing an optional field', () => {
    * back to `pending_review` to change nothing. `null` is the spelling that clears
    * (backend reply 2026-08-26 §5).
    */
-  it('sends null for each of the three fields the API documented', () => {
+  it('sends null for each of the three text fields', () => {
     const original = stateFromUnit(savedUnit());
 
     expect(toPatchBody({ ...original, description: '' }, original)).toEqual({
@@ -476,15 +476,72 @@ describe('clearing an optional field', () => {
   });
 
   /**
-   * Emptying the amenities is a real change this patch still cannot carry: `null` was
-   * documented for three fields and `amenities` is not one of them. Guessing at a fourth
-   * is exactly how the fictional `max:500` got here, so the gap is pinned rather than
-   * filled in.
+   * An emptied amenity list is sent as `[]`, not as `null`.
+   *
+   * The server takes either on either shape, so this is a choice: `[]` says "this set,
+   * and it is empty", and — decisively — `[]` on an array has always worked in
+   * production while `null` on an array is built but not yet deployed there. The
+   * spelling that works everywhere wins.
    */
-  it('skips an emptied field the API has not documented a clear for', () => {
+  it('empties the amenity list with an empty array', () => {
     const original = stateFromUnit(savedUnit());
+    const stripped: UnitWizardState = { ...original, amenities: [] };
 
-    expect(toPatchBody({ ...original, amenities: [] }, original)).toEqual({});
+    expect(toPatchBody(stripped, original)).toEqual({ amenities: [] });
+    expect(hasChanges(stripped, original)).toBe(true);
+  });
+
+  it('does not send an empty array for a list that was already empty', () => {
+    const blank = stateFromUnit(savedUnit({ amenityKeys: [] }));
+
+    expect(toPatchBody(blank, blank)).toEqual({});
+  });
+
+  /**
+   * `photoFileIds` stays out of the clearable set: an empty array there means "delete
+   * every photo", and a gallery that looks empty in the form is not always one the admin
+   * emptied.
+   */
+  it('never sends an empty photo list, whatever the gallery looks like', () => {
+    const original = stateFromUnit(savedUnit());
+    const legacyOnly: UnitWizardState = {
+      ...original,
+      photos: [photo({ localId: 'legacy_0', fileId: null, remote: true })],
+    };
+
+    expect(toPatchBody(legacyOnly, original).photoFileIds).toBeUndefined();
+    expect(toPatchBody({ ...original, photos: [] }, original).photoFileIds).toBeUndefined();
+  });
+
+  /**
+   * And this is the half the rule above does **not** cover, pinned so nobody reads it as
+   * a guarantee it never made.
+   *
+   * `syncPhotos()` deletes every image row and rebuilds from the list on *every* write,
+   * so a photo with no `fileId` is lost to any patch carrying `photoFileIds` at all — not
+   * only to an empty one. There is no "complete" list to send: the row that needs
+   * protecting is the one that cannot be represented in a list.
+   *
+   * The console does not block this. It warns, via `hasUnmergeablePhotos`, because
+   * refusing the write would make adding a photo to such a unit fail silently — and a
+   * silent failure is worse than a stated loss. Deleting the guard means deleting the
+   * warning with it, which is what this test exists to make obvious.
+   */
+  it('sends a partial list when a photo is added beside an unrepresentable one, and says so', () => {
+    const legacy = photo({ localId: 'legacy_0', fileId: null, remote: true });
+    const original = stateFromUnit(savedUnit());
+    const withLegacy: UnitWizardState = { ...original, photos: [legacy] };
+
+    const added: UnitWizardState = {
+      ...withLegacy,
+      photos: [legacy, photo({ localId: 'new', fileId: 'file_new' })],
+    };
+
+    // The legacy row cannot be in the list, so the list the server rebuilds from omits it.
+    expect(toPatchBody(added, withLegacy).photoFileIds).toEqual(['file_new']);
+
+    // Which is exactly why the admin is told before they save.
+    expect(hasUnmergeablePhotos(added)).toBe(true);
   });
 
   it('still carries a field that was edited rather than emptied', () => {
@@ -589,8 +646,8 @@ describe('description formatting constants', () => {
   it('caps the description at 2000 characters, not the 500 it started at', () => {
     // 500 was our own guess at the partner rule, never a number the API gave us, and a
     // description written as headings and lists does not fit in it. The backend confirmed
-    // 2000 with `mb_strlen` on both consoles (reply 2026-08-26 §2) — live on staging,
-    // still pending on production.
+    // 2000 with `mb_strlen` on both consoles, live on staging and production since
+    // 2026-08-26.
     expect(MAX_DESCRIPTION).toBe(2000);
     expect(MIN_DESCRIPTION).toBe(10);
   });

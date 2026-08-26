@@ -10,6 +10,9 @@ import {
   UNIT_STATUS,
 } from '@/lib/constants';
 import { ApiError } from '@/lib/api/client';
+// The stored Arabic labels the read side returns, derived from the keys the write side
+// takes rather than kept as a second hand-maintained list that could drift from it.
+import { ar } from '@/i18n/ar';
 import { splitForUnit, splitPrice } from '@/lib/utils/format';
 import { resolveIneligibleReason } from '@/lib/wallets/eligibility';
 import type {
@@ -712,14 +715,26 @@ export const mockUnits = {
     // An edit to an approved unit sends it back for review — the same rule the partner
     // dashboard warns about before saving.
     //
-    // The spread assumes the write-side key names match the read-side ones. They do for
-    // `description` and `address`; `tourismLicenseNumber` is read back as
-    // `tourismPermitNo`, so without the line below clearing the licence number appeared
-    // to be undone the moment the form rebaselined — a bug that exists only in mock mode
-    // and would have been read as a bug in the clearing itself.
-    const { tourismLicenseNumber, ...rest } = body;
+    /*
+      The spread assumes the write-side key names match the read-side ones. For two fields
+      they do not, and both had to be pulled out of it — without that, clearing either one
+      appeared to be undone the moment the form rebaselined, a bug that lives only in mock
+      mode and would have been read as a bug in the clearing itself.
+
+        tourismLicenseNumber  is read back as  tourismPermitNo
+        amenities (keys)      is read back as  amenityKeys, plus `amenities` as the
+                                               stored Arabic labels — a different shape
+                                               under the same name, so a naive spread put
+                                               raw keys into the label field as well.
+    */
+    const { tourismLicenseNumber, amenities, ...rest } = body;
     const next = { ...seed.unitDetail(unit), ...rest };
+
     if (tourismLicenseNumber !== undefined) next.tourismPermitNo = tourismLicenseNumber;
+    if (amenities !== undefined) {
+      next.amenityKeys = [...amenities];
+      next.amenities = amenities.map((key) => ar.amenities[key]);
+    }
 
     return delay({
       ...next,
