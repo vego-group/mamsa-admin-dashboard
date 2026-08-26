@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ConfirmDialog, ErrorState, LtrText, PdfViewer, RichText, StatusBadge } from '@/components/common';
+import { UnitDescription } from '@/components/units/UnitDescription';
 import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
 import { Button } from '@/components/ui/button';
@@ -175,7 +176,17 @@ function UnitDetailPageContent({ params }: { params: { id: string } }) {
               </p>
             )}
 
-            <p className="mt-4 leading-relaxed text-slate-600">{detail.description}</p>
+            {/*
+              Through the parser, not into a `<p>`. A raw string here was collapsed by
+              HTML's own whitespace handling, so a description written as headings and
+              lists reached this page as one grey block — the reviewer and the guest were
+              reading two different listings.
+            */}
+            <UnitDescription
+              text={detail.description}
+              emptyLabel={t.approvalDetail.noDescription}
+              className="mt-4"
+            />
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <FactTile icon={BedDouble} value={String(detail.bedrooms)} label={t.units.bedrooms} />

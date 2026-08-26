@@ -5,7 +5,9 @@ import { Crosshair, ExternalLink, Loader2, MapPin, Minus, Plus, Search } from 'l
 import { useT } from '@/i18n';
 import { useUiStore } from '@/stores/uiStore';
 import { isInsideSaudi, isValidLatLng, roundCoord, SAUDI_BOUNDS } from '@/lib/units/geo';
+import { localityOf } from '@/lib/units/locality';
 import { parseLocationInput } from '@/lib/units/parse-location';
+import { findPlusCode, isFullPlusCode } from '@/lib/units/plus-code';
 import type { LatLng } from '@/types';
 
 /**
@@ -72,11 +74,21 @@ interface NominatimResult {
 
 export interface LocationPickerProps {
   value: LatLng | null;
-  /** `address` is null when the pin lands outside Saudi Arabia or the lookup fails. */
-  onChange: (point: LatLng, address: string | null) => void;
+  /**
+   * `address` is null when the pin lands outside Saudi Arabia or the lookup fails.
+   * `locality` is the city-level name the geocoder recognised, for checking the pin
+   * against the city the admin declared.
+   */
+  onChange: (point: LatLng, address: string | null, locality?: string | null) => void;
+  /**
+   * The declared city, in the admin's own words. Used as the anchor for a **short** Plus
+   * Code, which repeats every degree and is otherwise resolved against wherever the map
+   * happens to be pointing — see `resolveReference`.
+   */
+  cityLabel?: string;
 }
 
-export function LocationPicker({ value, onChange }: LocationPickerProps) {
+export function LocationPicker({ value, onChange, cityLabel }: LocationPickerProps) {
   const t = useT();
   const locale = useUiStore((state) => state.locale);
 
@@ -93,6 +105,9 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
   const [noMatch, setNoMatch] = useState(false);
   const [reverseLoading, setReverseLoading] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [shortCodeNote, setShortCodeNote] = useState<string | null>(null);
+  /** Geocoded city centroids, so a second short code costs no extra request. */
+  const cityAnchors = useRef(new Map<string, LatLng | null>());
 
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; center: LatLng; moved: boolean } | null>(null);
@@ -141,8 +156,11 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           'https://nominatim.openstreetmap.org/reverse?format=json' +
           `&lat=${next.lat}&lon=${next.lng}&addressdetails=1&accept-language=${locale}`;
         const response = await fetch(url);
-        const data = (await response.json()) as { display_name?: string };
-        if (data.display_name) onChange(next, data.display_name);
+        const data = (await response.json()) as {
+          display_name?: string;
+          address?: Record<string, string>;
+        };
+        if (data.display_name) onChange(next, data.display_name, localityOf(data.address));
       } catch {
         // A failed reverse lookup is not a failed pin — the admin types the address.
       } finally {
@@ -165,11 +183,51 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
     [commit, onChange],
   );
 
+  /**
+   * Where to resolve a short Plus Code from.
+   *
+   * A short code names a cell that repeats every degree — about 110km — so the answer
+   * depends entirely on the reference point. Using the map centre made that reference
+   * whatever the admin last looked at: a unit was created 150km from its address because
+   * a stray pin near Al-Kharj was on screen when its code was pasted, and the code
+   * resolved to the Al-Kharj copy of the same cell. The declared city is a reference the
+   * admin actually chose, so it is used first and the map centre only as a fallback.
+   */
+  async function resolveReference(raw: string): Promise<LatLng> {
+    const code = findPlusCode(raw);
+    if (!code || isFullPlusCode(code) || !cityLabel) return centerRef.current;
+
+    const cached = cityAnchors.current.get(cityLabel);
+    if (cached !== undefined) return cached ?? centerRef.current;
+
+    try {
+      const url =
+        'https://nominatim.openstreetmap.org/search?format=json&limit=1' +
+        `&q=${encodeURIComponent(cityLabel)}&countrycodes=sa`;
+      const response = await fetch(url);
+      const [match] = (await response.json()) as NominatimResult[];
+      const anchor = match ? { lat: Number(match.lat), lng: Number(match.lon) } : null;
+      cityAnchors.current.set(cityLabel, anchor);
+      return anchor ?? centerRef.current;
+    } catch {
+      cityAnchors.current.set(cityLabel, null);
+      return centerRef.current;
+    }
+  }
+
   async function search() {
-    const parsed = parseLocationInput(query, centerRef.current);
+    setShortCodeNote(null);
+    const reference = await resolveReference(query);
+    const parsed = parseLocationInput(query, reference);
 
     // A link, a coordinate pair or a Plus Code already *is* the answer — no request.
     if (parsed.kind === 'point') {
+      const code = findPlusCode(query);
+      // A short code is a guess about which copy of the cell was meant. Say so, rather
+      // than presenting 110km of ambiguity as a confirmed address.
+      if (parsed.source === 'plusCode' && code && !isFullPlusCode(code)) {
+        setShortCodeNote(code.toUpperCase());
+      }
       goTo(parsed.point);
       return;
     }
@@ -368,6 +426,12 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
       </div>
 
       {searchError && <p className="text-xs text-status-red">{t.unitWizard.geocodeError}</p>}
+
+      {shortCodeNote && (
+        <p className="rounded-2xl bg-status-amberSoft px-4 py-3 text-sm leading-relaxed text-status-amber">
+          {t.unitWizard.shortCodeNote(shortCodeNote)}
+        </p>
+      )}
 
       {noMatch && (
         <div className="rounded-2xl border border-hairline bg-surface-muted/70 px-4 py-3">
@@ -583,4 +647,55 @@ function Tiles({
   }
 
   return <>{tiles}</>;
+}
+
+/**
+ * A small, still map of a coordinate — for the review step.
+ *
+ * 150km of error is obvious in a picture and invisible in a text field. That is not
+ * hypothetical: a unit went live with a pin in the wrong governorate, and the number on
+ * the review screen looked exactly as reasonable as the right one would have.
+ */
+export function StaticMapPreview({
+  point,
+  zoom = 15,
+  className,
+}: {
+  point: LatLng;
+  zoom?: number;
+  className?: string;
+}) {
+  const width = 320;
+  const height = 160;
+  const originX = lngToTileX(point.lng, zoom) * TILE - width / 2;
+  const originY = latToTileY(point.lat, zoom) * TILE - height / 2;
+
+  return (
+    <div
+      className={className}
+      style={{ position: 'relative', width, height, overflow: 'hidden' }}
+    >
+      <Tiles originX={originX} originY={originY} zoom={zoom} size={{ width, height }} />
+      <svg
+        width="24"
+        height="31"
+        viewBox="0 0 34 44"
+        aria-hidden
+        style={{
+          position: 'absolute',
+          left: width / 2,
+          top: height / 2,
+          transform: 'translate(-50%, -100%)',
+        }}
+      >
+        <path
+          d="M17 43S32 26.4 32 16A15 15 0 1 0 2 16c0 10.4 15 27 15 27Z"
+          fill="#1E4034"
+          stroke="#FFFFFF"
+          strokeWidth="2"
+        />
+        <circle cx="17" cy="16" r="5.5" fill="#FFFFFF" />
+      </svg>
+    </div>
+  );
 }

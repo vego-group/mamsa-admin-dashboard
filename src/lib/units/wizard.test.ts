@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AMENITY, CANCELLATION_POLICY, UNIT_STATUS, UNIT_TYPE } from '@/lib/constants';
 import {
+  MAX_DESCRIPTION,
   MIN_DESCRIPTION,
   canCreate,
   coverPhotoOf,
@@ -10,6 +11,7 @@ import {
   stateFromUnit,
   stepValidity,
   stepsWithErrors,
+  submitWouldBeNoop,
   toCreateBody,
   toPatchBody,
   type PhotoItem,
@@ -17,6 +19,9 @@ import {
 } from './wizard';
 import { EMPTY_WIZARD_STATE } from './wizard';
 import type { UnitDetail } from '@/types';
+import { DESCRIPTION_TEMPLATE } from './description-template';
+import { ar } from '@/i18n/ar';
+import { en } from '@/i18n/en';
 
 function photo(overrides: Partial<PhotoItem> = {}): PhotoItem {
   return {
@@ -56,7 +61,9 @@ describe('toCreateBody', () => {
     const body = toCreateBody(complete());
 
     expect(body.description).toBe('A description comfortably past the minimum length.');
-    expect(body.amenities).toEqual([AMENITY.WIFI, AMENITY.ELEVATOR]);
+    // Sorted, not as picked — the comparison in toPatchBody is positional, so the wire
+    // body is normalised to keep a re-picked set from reading as an edit.
+    expect(body.amenities).toEqual([AMENITY.ELEVATOR, AMENITY.WIFI]);
     expect(body.lat).toBe(24.7136);
     expect(body.tourismLicenseFileId).toBe('file_lic');
     expect(body.photoFileIds).toEqual(['file_1']);
@@ -124,7 +131,7 @@ describe('toPatchBody', () => {
     const after = complete({ amenities: [AMENITY.WIFI, AMENITY.ELEVATOR, AMENITY.POOL] });
 
     expect(toPatchBody(after, before)).toEqual({
-      amenities: [AMENITY.WIFI, AMENITY.ELEVATOR, AMENITY.POOL],
+      amenities: [AMENITY.ELEVATOR, AMENITY.POOL, AMENITY.WIFI],
     });
   });
 });
@@ -414,5 +421,193 @@ describe('editing the gallery', () => {
       photos: [{ id: null, url: 'https://cdn/old.jpg', isCover: true }],
     });
     expect(hasUnmergeablePhotos(stateFromUnit(legacy))).toBe(true);
+  });
+});
+
+describe('clearing an optional field', () => {
+  /**
+   * `undefined` cannot ask for anything.
+   *
+   * `toCreateBody` maps an emptied optional to `undefined`, `JSON.stringify` drops
+   * undefined-valued keys, and the server reads an absent key as "unchanged" — so the
+   * patch went out as `{}` and kept the old text. Worse than the no-op: `hasChanges`
+   * counted the key, so the wizard's guard did not fire and an approved unit was knocked
+   * back to `pending_review` to change nothing. `null` is the spelling that clears
+   * (backend reply 2026-08-26 §5).
+   */
+  it('sends null for each of the three fields the API documented', () => {
+    const original = stateFromUnit(savedUnit());
+
+    expect(toPatchBody({ ...original, description: '' }, original)).toEqual({
+      description: null,
+    });
+    expect(toPatchBody({ ...original, address: '' }, original)).toEqual({ address: null });
+    expect(toPatchBody({ ...original, licenseNo: '' }, original)).toEqual({
+      tourismLicenseNumber: null,
+    });
+  });
+
+  it('counts a clear as a change, so the save button is reachable', () => {
+    const original = stateFromUnit(savedUnit());
+
+    expect(hasChanges({ ...original, description: '' }, original)).toBe(true);
+  });
+
+  it('treats whitespace as empty rather than as a value to store', () => {
+    const original = stateFromUnit(savedUnit());
+
+    expect(toPatchBody({ ...original, description: '   \n\n  ' }, original)).toEqual({
+      description: null,
+    });
+  });
+
+  /**
+   * A field that was already empty and stays empty is not a clear. Both sides are
+   * `undefined`, so the equality check ends it before the clearing branch is reached —
+   * otherwise opening an edit form and saving nothing would send three nulls.
+   */
+  it('sends nothing for a field that was empty to begin with', () => {
+    const blank = stateFromUnit(
+      savedUnit({ description: '', address: null, tourismPermitNo: null }),
+    );
+
+    expect(toPatchBody(blank, blank)).toEqual({});
+    expect(hasChanges(blank, blank)).toBe(false);
+  });
+
+  /**
+   * Emptying the amenities is a real change this patch still cannot carry: `null` was
+   * documented for three fields and `amenities` is not one of them. Guessing at a fourth
+   * is exactly how the fictional `max:500` got here, so the gap is pinned rather than
+   * filled in.
+   */
+  it('skips an emptied field the API has not documented a clear for', () => {
+    const original = stateFromUnit(savedUnit());
+
+    expect(toPatchBody({ ...original, amenities: [] }, original)).toEqual({});
+  });
+
+  it('still carries a field that was edited rather than emptied', () => {
+    const original = stateFromUnit(savedUnit());
+    const formatted = ['## عنوان', '- نقطة'].join('\n');
+    const edited: UnitWizardState = { ...original, description: formatted };
+
+    expect(toPatchBody(edited, original)).toEqual({ description: formatted });
+  });
+});
+
+describe('submitWouldBeNoop', () => {
+  /**
+   * The silent failure this guards: an admin opens a saved draft to send it for review,
+   * changes nothing because there was nothing to change, presses submit — and the wizard
+   * navigated away with no PATCH, no submit, no success screen and no error. The unit
+   * stayed a draft and the admin believed it was queued.
+   */
+  it('never skips a draft, changed or not', () => {
+    expect(submitWouldBeNoop(UNIT_STATUS.DRAFT, false)).toBe(false);
+    expect(submitWouldBeNoop(UNIT_STATUS.DRAFT, true)).toBe(false);
+  });
+
+  it('never skips a rejected unit — the fix may have been made elsewhere', () => {
+    expect(submitWouldBeNoop(UNIT_STATUS.REJECTED, false)).toBe(false);
+  });
+
+  it('skips an untouched unit that is already in or past review', () => {
+    expect(submitWouldBeNoop(UNIT_STATUS.APPROVED, false)).toBe(true);
+    expect(submitWouldBeNoop(UNIT_STATUS.PENDING_REVIEW, false)).toBe(true);
+  });
+
+  it('never skips anything that actually changed', () => {
+    for (const status of Object.values(UNIT_STATUS)) {
+      expect(submitWouldBeNoop(status, true), status).toBe(false);
+    }
+  });
+
+  it('treats an unknown status as submittable rather than swallowing it', () => {
+    // A redundant submit is visible and recoverable; a skipped one is not.
+    expect(submitWouldBeNoop(null, false)).toBe(false);
+    expect(submitWouldBeNoop(undefined, false)).toBe(false);
+  });
+});
+
+describe('an edit that is not an edit', () => {
+  /**
+   * `toggleAmenity` removes with `filter` and re-adds by appending, so unchecking a
+   * chip and re-checking it leaves the same set in a different order. `toPatchBody`
+   * compares with `JSON.stringify`, which is positional, so it called that a change —
+   * and on an approved unit every change costs a trip back through review.
+   *
+   * Nothing on screen could have revealed it: the chips render in `AMENITY_KEYS` order,
+   * never in state order.
+   */
+  it('does not treat a reordered amenity list as a change', () => {
+    const original = stateFromUnit(savedUnit({ amenityKeys: [AMENITY.WIFI, AMENITY.AC] }));
+    const reordered: UnitWizardState = { ...original, amenities: [AMENITY.AC, AMENITY.WIFI] };
+
+    expect(toPatchBody(reordered, original)).toEqual({});
+    expect(hasChanges(reordered, original)).toBe(false);
+  });
+
+  it('still notices a real amenity change', () => {
+    const original = stateFromUnit(savedUnit({ amenityKeys: [AMENITY.WIFI, AMENITY.AC] }));
+    const added: UnitWizardState = { ...original, amenities: [AMENITY.AC, AMENITY.WIFI, AMENITY.POOL] };
+
+    expect(toPatchBody(added, original)).toEqual({
+      amenities: [AMENITY.AC, AMENITY.POOL, AMENITY.WIFI],
+    });
+  });
+
+  it('sends the amenity list in a stable order whatever order it was picked in', () => {
+    const base = stateFromUnit(savedUnit());
+    const one: UnitWizardState = { ...base, amenities: [AMENITY.POOL, AMENITY.WIFI] };
+    const other: UnitWizardState = { ...base, amenities: [AMENITY.WIFI, AMENITY.POOL] };
+
+    expect(toCreateBody(one).amenities).toEqual(toCreateBody(other).amenities);
+  });
+
+  /** The gallery's order is the gallery's; only the amenity *set* gets normalised. */
+  it('leaves the photo order alone', () => {
+    const state: UnitWizardState = {
+      ...EMPTY_WIZARD_STATE,
+      photos: [photo({ localId: 'b', fileId: 'file_b' }), photo({ localId: 'a', fileId: 'file_a' })],
+    };
+
+    expect(toCreateBody(state).photoFileIds).toEqual(['file_b', 'file_a']);
+  });
+});
+
+/**
+ * The constants the description's formatting rests on, pinned so a change to any of them
+ * has to be deliberate.
+ *
+ * None of these have a test anywhere else: `MAX_DESCRIPTION` is only ever read (the
+ * counter, the slice, the step gate), the hint is a dictionary string nothing asserts on,
+ * and the template is inserted rather than computed. Each could be changed back to its old
+ * value with a green suite, which is exactly the regression worth a guard.
+ */
+describe('description formatting constants', () => {
+  it('caps the description at 2000 characters, not the 500 it started at', () => {
+    // 500 was our own guess at the partner rule, never a number the API gave us, and a
+    // description written as headings and lists does not fit in it. The backend confirmed
+    // 2000 with `mb_strlen` on both consoles (reply 2026-08-26 §2) — live on staging,
+    // still pending on production.
+    expect(MAX_DESCRIPTION).toBe(2000);
+    expect(MIN_DESCRIPTION).toBe(10);
+  });
+
+  it('offers a template that is a valid description the moment it is inserted', () => {
+    // The button drops this into an empty field and the admin may save straight away, so
+    // it has to clear the same two gates the field does.
+    expect(DESCRIPTION_TEMPLATE.trim().length).toBeGreaterThanOrEqual(MIN_DESCRIPTION);
+    expect(DESCRIPTION_TEMPLATE.length).toBeLessThanOrEqual(MAX_DESCRIPTION);
+  });
+
+  it('keeps the cheatsheet naming every marker the parser reads', () => {
+    // Reflowing this Arabic string is easy and dropping a marker from it is invisible —
+    // the field still works, and the admin is simply never told the marker exists.
+    for (const marker of ['##', '- ', '1.', '*ميزة*', '**كلمة**', '>']) {
+      expect(ar.unitWizard.descriptionFormatHint).toContain(marker);
+    }
+    expect(en.unitWizard.descriptionFormatHint).toContain('##');
   });
 });

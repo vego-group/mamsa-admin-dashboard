@@ -517,6 +517,8 @@ export const ar: Dictionary = {
     ownerId: 'هوية المالك',
     permitFile: 'ملف الرخصة',
     noAmenities: 'لا توجد مرافق مسجّلة',
+    // See the note in en.ts — فراغ صامت لا يميّز بين وصف ممسوح ووصف تعذّر عرضه.
+    noDescription: 'هذه الوحدة بلا وصف',
     noPhotos: 'هذه الوحدة بلا صور',
     noPhotosHint: 'لا يمكن تقييم الوحدة بدونها — وهذا سبب كافٍ للرفض.',
     submittedEvent: 'قُدّم للمراجعة',
@@ -650,6 +652,16 @@ export const ar: Dictionary = {
     descriptionField: 'وصف الوحدة',
     descriptionPh: 'صِف الوحدة — موقعها ومميزاتها وما يجعلها تستحق الحجز…',
     descriptionTooShort: (min: number) => `${min} أحرف على الأقل`,
+    // See the note in en.ts — a writing convention, not an editor.
+    descriptionWrite: 'كتابة',
+    descriptionPreview: 'معاينة',
+    descriptionFormatSummary: 'تنسيق الوصف',
+    descriptionFormatHint:
+      'نسّق الوصف بعلامات بسيطة: ## عنوان · - نقطة · 1. خطوة · *ميزة* في سطر مستقل · *كلمة* داخل الجملة للتمييز · **كلمة** للتعريض · > ملاحظة',
+    descriptionTemplateBtn: 'قالب وصف',
+    descriptionTemplateHint: 'يملأ الحقل الفارغ بهيكل جاهز يعدّله الفريق.',
+    descriptionPreviewEmpty: 'لا يوجد وصف بعد — اكتب الوصف أولاً.',
+    descriptionPreviewNote: 'هكذا سيقرأ الضيف الوصف على صفحة الوحدة.',
     amenitiesField: 'المرافق',
     amenitiesSelected: (count: number) => `${count} مرافق مختارة`,
     checkInOut: 'الدخول / الخروج',
@@ -684,6 +696,11 @@ export const ar: Dictionary = {
     saudiOnly: 'داخل السعودية فقط',
     clickMapHint: 'اضغط لوضع الدبوس، اسحب للتحريك، واستخدم عجلة الماوس أو الضغط المزدوج للتكبير.',
     outsideSaudi: 'هذا الموقع خارج حدود المملكة العربية السعودية',
+    // See the note in en.ts — a short code is a guess, and it should say so.
+    shortCodeNote: (code: string) =>
+      `${code} كود مختصر ويتكرّر كل 110 كم تقريباً. حُلّ بالنسبة للمدينة المختارة — تأكّد أن الدبوس على المبنى الصحيح.`,
+    cityMismatch: (found: string, expected: string) =>
+      `الدبوس يقع في ${found}، بينما المدينة المختارة هي ${expected}. حرّك الدبوس أو غيّر المدينة قبل المتابعة.`,
     locationConfirmed: 'تم تأكيد الموقع',
     saudiArabia: 'المملكة العربية السعودية',
     zoomIn: 'تكبير',

@@ -524,6 +524,9 @@ export const en = {
     ownerId: 'Owner ID',
     permitFile: 'Permit document',
     noAmenities: 'No amenities listed',
+    // Not silence. A cleared description and a description that failed to render look
+    // identical when the answer to both is an empty gap.
+    noDescription: 'This listing has no description',
     noPhotos: 'This listing has no photos',
     noPhotosHint: 'A unit cannot be assessed without them — grounds for rejection.',
     submittedEvent: 'Submitted for review',
@@ -669,6 +672,17 @@ export const en = {
     descriptionField: 'Unit description',
     descriptionPh: 'Describe the unit — its location, features, and what makes it worth booking…',
     descriptionTooShort: (min: number) => `At least ${min} characters`,
+    // The guest site turns these markers into headings, feature cards and lists. The
+    // field stays plain text on both sides — this is a writing convention, not an editor.
+    descriptionWrite: 'Write',
+    descriptionPreview: 'Preview',
+    descriptionFormatSummary: 'Formatting the description',
+    descriptionFormatHint:
+      'Format the description with simple markers: ## heading · - bullet · 1. step · *feature* on its own line · *word* inside a sentence to highlight · **word** for bold · > note',
+    descriptionTemplateBtn: 'Description template',
+    descriptionTemplateHint: 'Fills the empty field with a structure your team edits.',
+    descriptionPreviewEmpty: 'Nothing to preview yet — write the description first.',
+    descriptionPreviewNote: 'This is how the description will read on the guest page.',
     amenitiesField: 'Amenities',
     amenitiesSelected: (count: number) => `${count} amenities selected`,
     checkInOut: 'Check-in / Check-out',
@@ -710,6 +724,12 @@ export const en = {
     saudiOnly: 'Saudi Arabia only',
     clickMapHint: 'Click to drop the pin, drag to pan, scroll or double-click to zoom in.',
     outsideSaudi: 'This location is outside Saudi Arabia',
+    // A short code names a cell that repeats every degree — roughly 110km — so it was
+    // resolved against the declared city, and that guess is worth stating.
+    shortCodeNote: (code: string) =>
+      `${code} is a short Plus Code, which repeats about every 110km. It was matched to the city you selected — check the pin is the right building.`,
+    cityMismatch: (found: string, expected: string) =>
+      `The pin is in ${found}, but the selected city is ${expected}. Move the pin or change the city before continuing.`,
     locationConfirmed: 'Location confirmed',
     saudiArabia: 'Kingdom of Saudi Arabia',
     zoomIn: 'Zoom in',

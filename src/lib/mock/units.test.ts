@@ -69,3 +69,61 @@ describe('mockUnits.get', () => {
     expect(detail.images).toEqual([]);
   });
 });
+
+describe('mockUnits.update — clearing an optional field', () => {
+  /**
+   * `null` is what the API accepts to empty a field (backend reply 2026-08-26 §5), so the
+   * mock has to round-trip it the way the server does. These run against the mock rather
+   * than the pure body builder because the bug they guard lived in the mock alone: a
+   * naive spread of the patch over the detail shape assumes the write-side and read-side
+   * key names match, and for the tourism licence they do not.
+   */
+  async function editableUnit() {
+    const { items } = await mockUnits.list({ pageSize: 50 });
+    return items.find((unit) => unit.status !== UNIT_STATUS.PENDING_REVIEW)!;
+  }
+
+  it('clears the description', async () => {
+    const unit = await editableUnit();
+    const updated = await mockUnits.update(unit.id, { description: null });
+
+    expect(updated.description).toBeNull();
+  });
+
+  it('clears the address', async () => {
+    const unit = await editableUnit();
+    const updated = await mockUnits.update(unit.id, { address: null });
+
+    expect(updated.address).toBeNull();
+  });
+
+  /**
+   * The write side calls it `tourismLicenseNumber`; the read side answers with
+   * `tourismPermitNo`. Spreading the patch straight over the detail left the old number
+   * in place plus a stray key nothing reads, so the wizard rebaselined to the old value
+   * and the clear looked like it had been undone.
+   */
+  it('clears the tourism licence number under its read-side name', async () => {
+    const unit = await editableUnit();
+    const updated = await mockUnits.update(unit.id, { tourismLicenseNumber: null });
+
+    expect(updated.tourismPermitNo).toBeNull();
+    expect('tourismLicenseNumber' in updated).toBe(false);
+  });
+
+  it('leaves a field alone when the patch does not mention it', async () => {
+    const unit = await editableUnit();
+    const before = await mockUnits.get(unit.id);
+    const updated = await mockUnits.update(unit.id, { description: null });
+
+    expect(updated.tourismPermitNo).toBe(before.tourismPermitNo);
+    expect(updated.address).toBe(before.address);
+  });
+
+  it('writes a new licence number under the read-side name too', async () => {
+    const unit = await editableUnit();
+    const updated = await mockUnits.update(unit.id, { tourismLicenseNumber: 'TL-2026-9999' });
+
+    expect(updated.tourismPermitNo).toBe('TL-2026-9999');
+  });
+});

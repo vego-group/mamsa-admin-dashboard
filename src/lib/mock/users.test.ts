@@ -42,11 +42,17 @@ describe('mockUsers.list', () => {
 });
 
 describe('mockUsers.get', () => {
+  /**
+   * Fetched together, not one after another — see the same note in `partners.test.ts`.
+   * Awaiting each `get` in sequence cost one mock `delay` per user, so the run time scaled
+   * with the seed and sat on the 5s default timeout. Nothing asserted here changed.
+   */
   it('never dates a milestone before the account existed', async () => {
     const { items } = await mockUsers.list({ pageSize: 50 });
+    const details = await Promise.all(items.map((user) => mockUsers.get(user.id)));
 
-    for (const user of items) {
-      const detail = await mockUsers.get(user.id);
+    expect(details).toHaveLength(items.length);
+    for (const detail of details) {
       const stamps = detail.activity.map((entry) => new Date(entry.at).getTime());
 
       expect(stamps[0]).toBe(new Date(detail.joinedAt).getTime());

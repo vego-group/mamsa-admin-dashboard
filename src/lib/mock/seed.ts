@@ -372,8 +372,26 @@ export function unitDetail(unit: Unit): UnitDetail {
 
   return {
     ...unit,
-    description:
-      'وحدة مؤثثة بالكامل بأعلى مستوى من التجهيزات، تقع في موقع مميز وقريبة من الخدمات الرئيسية.',
+    // Written with the line markers the guest site renders, so the approvals screens show
+    // a formatted description in mock mode — a reviewer testing this console against a
+    // single unformatted paragraph would never see the thing they are meant to check.
+    description: [
+      `وحدة مؤثثة بالكامل بأعلى مستوى من التجهيزات في *${unit.district}*، وقريبة من الخدمات الرئيسية.`,
+      '',
+      '## ما يميّز المكان',
+      '*تسجيل دخول ذاتي*',
+      '*موقف خاص*',
+      '',
+      '## المساحات',
+      '- **غرفة النوم:** سرير كينج مع دولاب واسع.',
+      '- **الصالة:** جلسة عائلية وتلفزيون بشاشة مسطّحة.',
+      '',
+      '## طريقة الوصول',
+      '1. اخرج من البوابة الشمالية.',
+      '2. اتجه يميناً 400 متر.',
+      '',
+      '> تسجيل الدخول بعد الساعة 3 عصراً.',
+    ].join('\n'),
     // Cover first, then four more so the gallery arrows have somewhere to go. A unit with
     // no cover has no photography at all — never a one-element array of a stand-in, which
     // is what let a reviewer tick "photos reviewed" on an empty listing.

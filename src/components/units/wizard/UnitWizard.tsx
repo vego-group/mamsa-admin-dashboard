@@ -7,8 +7,10 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileText,
   Loader2,
   Lock,
   Minus,
@@ -20,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useT } from '@/i18n';
+import { Segmented } from '@/components/common';
 import { useUiStore, type Locale } from '@/stores/uiStore';
 import { ApiError, citiesApi, unitsApi, uploadsApi } from '@/lib/api';
 import {
@@ -51,17 +54,21 @@ import {
   stepIndexOf,
   stepValidity,
   stepsWithErrors,
+  submitWouldBeNoop,
   toCreateBody,
   toPatchBody,
   type PhotoItem,
   type UnitWizardState,
   type WizardStep,
 } from '@/lib/units/wizard';
+import { DESCRIPTION_TEMPLATE } from '@/lib/units/description-template';
+import { localityMatchesCity } from '@/lib/units/locality';
 import { cn } from '@/lib/utils/cn';
 import { formatSAR } from '@/lib/utils/format';
 import type { City, LatLng, UnitDetail } from '@/types';
+import { UnitDescription } from '@/components/units/UnitDescription';
 import { FileUploadRow } from './FileUploadRow';
-import { LocationPicker } from './LocationPicker';
+import { LocationPicker, StaticMapPreview } from './LocationPicker';
 import { PriceBreakdown } from './PriceBreakdown';
 
 export interface UnitWizardProps {
@@ -138,7 +145,18 @@ export function UnitWizard({ existing }: UnitWizardProps) {
   }, []);
 
   const validity = useMemo(() => stepValidity(state), [state]);
-  const stepValid = validity[step];
+  /**
+   * A pin that disagrees with the declared city blocks the location step outright.
+   *
+   * Warning was not enough: the unit this guard exists for was saved 150km from its
+   * address, and every other check passed it — inside the national bounding box, valid
+   * coordinates, an address that resolved cleanly to the wrong governorate.
+   */
+  const cityMismatch = !localityMatchesCity(
+    state.locality,
+    cities?.find((city) => city.key === state.city),
+  );
+  const stepValid = validity[step] && !(step === 2 && cityMismatch);
   const uploading = anyPhotoUploading(state);
   const busy = saving || submitting;
 
@@ -326,9 +344,9 @@ export function UnitWizard({ existing }: UnitWizardProps) {
       return;
     }
 
-    // An unchanged unit has nothing to send and nothing to review. Claiming otherwise
-    // would put a success screen in front of an admin who changed their mind.
-    if (editing && !dirty) {
+    // Letting a draft through costs nothing extra — `persist()` already returns the unit
+    // untouched when the patch body is empty, so no pointless PATCH goes out either way.
+    if (editing && submitWouldBeNoop(unit?.status, dirty)) {
       router.push(`/units/${unitId}`);
       return;
     }
@@ -447,6 +465,7 @@ export function UnitWizard({ existing }: UnitWizardProps) {
                 toggleAmenity={toggleAmenity}
                 errors={fieldErrors}
                 clear={clearFieldError}
+                locked={locked}
               />
             )}
             {step === 2 && (
@@ -454,6 +473,7 @@ export function UnitWizard({ existing }: UnitWizardProps) {
                 state={state}
                 patch={patch}
                 cities={cities}
+                cityMismatch={cityMismatch}
                 errors={fieldErrors}
                 clear={clearFieldError}
               />
@@ -626,10 +646,9 @@ function DetailsStep({
   toggleAmenity,
   errors,
   clear,
-}: StepProps & { toggleAmenity: (key: Amenity) => void }) {
+  locked,
+}: StepProps & { toggleAmenity: (key: Amenity) => void; locked?: boolean }) {
   const t = useT();
-  const description = state.description.trim();
-  const tooShort = description.length > 0 && description.length < MIN_DESCRIPTION;
 
   return (
     <>
@@ -724,28 +743,7 @@ function DetailsStep({
         </div>
       </Section>
 
-      <Section label={t.unitWizard.descriptionField} required>
-        <div className="mb-2 flex justify-end">
-          <span className="text-xs tabular-nums text-slate-400">
-            {state.description.length}/{MAX_DESCRIPTION}
-          </span>
-        </div>
-        <textarea
-          rows={4}
-          value={state.description}
-          onChange={(event) => {
-            patch({ description: event.target.value.slice(0, MAX_DESCRIPTION) });
-            clear('description');
-          }}
-          placeholder={t.unitWizard.descriptionPh}
-          className="w-full rounded-xl border border-hairline bg-white p-3 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
-        />
-        {errors?.description ? (
-          <FieldError message={errors.description} />
-        ) : (
-          tooShort && <FieldError message={t.unitWizard.descriptionTooShort(MIN_DESCRIPTION)} />
-        )}
-      </Section>
+      <DescriptionField state={state} patch={patch} errors={errors} clear={clear} locked={locked} />
 
       <Section label={t.unitWizard.amenitiesField}>
         <div className="flex flex-wrap gap-2.5">
@@ -815,14 +813,250 @@ function DetailsStep({
   );
 }
 
+/**
+ * The description, its live preview, and the two affordances that make the markers
+ * discoverable — a collapsed cheatsheet and a skeleton for an empty field.
+ *
+ * The preview is not a convenience here. Mamsa-owned units are the example partner
+ * listings are measured against in review, so a badly formatted one sets the bar low for
+ * every partner description that follows it. The tab renders through the same parser the
+ * approvals screens use, which is the same contract the guest site implements.
+ *
+ * The textarea's value reaches state untouched apart from the length cap. No trimming,
+ * no newline normalising, no `\s+` collapse — the markers only mean anything at the
+ * start of a line, so whitespace here is data.
+ */
+/**
+ * Ties the two tab buttons to the two panes they control.
+ *
+ * A constant rather than `useId()` because there is exactly one description field on the
+ * page — the wizard shows one step at a time — so a stable, readable id is worth more
+ * here than a collision-proof generated one.
+ */
+const DESCRIPTION_TABS = 'unit-description';
+
+/**
+ * Exported for `DescriptionField.test.tsx` only — nothing else imports it.
+ *
+ * Reaching this field through `UnitWizard` means satisfying the licence step first,
+ * which means uploading a file, so a test driven from the top would spend all its effort
+ * on a step it is not about. `LocationPicker` exports `StaticMapPreview` the same way.
+ */
+export function DescriptionField({
+  state,
+  patch,
+  errors,
+  clear,
+  locked,
+}: StepProps & { locked?: boolean }) {
+  const t = useT();
+  const [tab, setTab] = useState<'write' | 'preview'>('write');
+
+  const trimmed = state.description.trim();
+  const tooShort = trimmed.length > 0 && trimmed.length < MIN_DESCRIPTION;
+
+  /*
+    The counter measures the trimmed string — the one that is stored and the one both
+    gates in `stepValidity` are checked against.
+
+    Counting the raw value instead let the counter contradict the form: nine characters
+    and one Enter read "10/2000", exactly the stated minimum, while the field error under
+    it said "10 أحرف على الأقل" and Next stayed disabled. Two numbers describing the same
+    field have to be the same number.
+  */
+  const counted = trimmed.length;
+  const nearLimit = counted > MAX_DESCRIPTION * 0.9;
+
+  const counterId = `${DESCRIPTION_TABS}-counter`;
+  const errorId = `${DESCRIPTION_TABS}-error`;
+  const invalid = Boolean(errors?.description) || tooShort;
+  const describedBy = [invalid ? errorId : null, counterId].filter(Boolean).join(' ');
+
+  /*
+    A locked unit shows both panes at once instead of the switch.
+    `<fieldset disabled>` reaches every control inside it, and there is no per-control
+    exemption in HTML — so while a unit sits in review the tab buttons are dead, and the
+    one screen where an admin most needs to see how a description renders would be the
+    one screen that refuses to show them. Stacking the panes needs no button to work.
+  */
+  const showWrite = locked || tab === 'write';
+  const showPreview = locked || tab === 'preview';
+
+  return (
+    <Section label={t.unitWizard.descriptionField} required>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {locked ? (
+          // Nothing but the counter here while locked. The caption belongs directly above
+          // the preview it describes, further down — over the disabled textarea it was
+          // pointing at raw markers and saying "this is how the guest reads it".
+          <span />
+        ) : (
+          <Segmented
+            items={[
+              { value: 'write', label: t.unitWizard.descriptionWrite },
+              { value: 'preview', label: t.unitWizard.descriptionPreview },
+            ]}
+            value={tab}
+            onChange={(value) => setTab(value as 'write' | 'preview')}
+            idPrefix={DESCRIPTION_TABS}
+          />
+        )}
+        {/* Counts the string as stored — a newline is one character on both sides. */}
+        <span
+          id={counterId}
+          className={cn('text-xs tabular-nums', nearLimit ? 'text-accent' : 'text-slate-500')}
+        >
+          {counted}/{MAX_DESCRIPTION}
+        </span>
+      </div>
+
+      {/*
+        Both panes stay mounted and are hidden with CSS rather than swapped by a ternary.
+        Unmounting the textarea threw away the caret, the scroll position and any height
+        the admin had dragged it to — on a 2000-character field, checking the preview
+        twice meant finding your place twice.
+      */}
+      <div
+        id={`${DESCRIPTION_TABS}-panel-write`}
+        role={locked ? undefined : 'tabpanel'}
+        aria-labelledby={locked ? undefined : `${DESCRIPTION_TABS}-tab-write`}
+        className={cn(!showWrite && 'hidden')}
+      >
+        {/*
+          `maxLength`, not a `slice` in the handler.
+
+          Slicing always cut from the *end*, wherever the edit was: with the field at
+          2000, putting the caret mid-description and typing one character silently
+          deleted the last one — enough to turn a closing `*` into a broken feature card
+          the admin never saw change. It also cut blind through a surrogate pair, leaving
+          a lone half that `json_decode` rejects outright. `maxLength` refuses the
+          keystroke instead, which is the browser's own well-understood behaviour, and it
+          truncates an over-long paste at the end rather than corrupting the middle.
+
+          No `min-h` either: it sat a few pixels above the natural ten-row height, so the
+          resize handle could grow the field but never shrink it back.
+        */}
+        <textarea
+          rows={10}
+          maxLength={MAX_DESCRIPTION}
+          value={state.description}
+          onChange={(event) => {
+            patch({ description: event.target.value });
+            clear('description');
+          }}
+          aria-label={t.unitWizard.descriptionField}
+          aria-required
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
+          placeholder={t.unitWizard.descriptionPh}
+          className="w-full resize-y rounded-xl border border-hairline bg-white p-3 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+        />
+      </div>
+
+      <div
+        id={`${DESCRIPTION_TABS}-panel-preview`}
+        role={locked ? undefined : 'tabpanel'}
+        aria-labelledby={locked ? undefined : `${DESCRIPTION_TABS}-tab-preview`}
+        className={cn(!showPreview && 'hidden', locked && 'mt-4')}
+      >
+        {locked && (
+          <p className="mb-2 text-xs font-medium text-slate-500">
+            {t.unitWizard.descriptionPreviewNote}
+          </p>
+        )}
+        <div className="min-h-[16rem] rounded-xl border border-hairline bg-surface-page p-4">
+          <UnitDescription
+            text={state.description}
+            emptyLabel={t.unitWizard.descriptionPreviewEmpty}
+          />
+        </div>
+      </div>
+
+      {/* Given an id so the textarea can point `aria-describedby` at it — an error a
+          screen reader never reaches is an error nobody was told about. */}
+      <div id={errorId}>
+        {errors?.description ? (
+          <FieldError message={errors.description} />
+        ) : (
+          tooShort && <FieldError message={t.unitWizard.descriptionTooShort(MIN_DESCRIPTION)} />
+        )}
+      </div>
+
+      {!locked && tab === 'preview' && trimmed.length > 0 && (
+        <p className="mt-2 text-xs text-slate-500">{t.unitWizard.descriptionPreviewNote}</p>
+      )}
+
+      {/* Only for an empty field: the skeleton is a starting point, never an overwrite. */}
+      {trimmed.length === 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            patch({ description: DESCRIPTION_TEMPLATE });
+            clear('description');
+            setTab('write');
+          }}
+          className="mt-3 inline-flex items-center gap-2 rounded-full border border-hairline bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-surface-muted"
+        >
+          <FileText className="h-3.5 w-3.5 text-brand" aria-hidden />
+          {t.unitWizard.descriptionTemplateBtn}
+          <span className="font-normal text-slate-400">{t.unitWizard.descriptionTemplateHint}</span>
+        </button>
+      )}
+
+      <details className="group mt-3 rounded-xl border border-hairline bg-surface-page px-3.5 py-2.5">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-slate-600 [&::-webkit-details-marker]:hidden">
+          <ChevronDown
+            className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
+            aria-hidden
+          />
+          {t.unitWizard.descriptionFormatSummary}
+        </summary>
+        <FormatHint hint={t.unitWizard.descriptionFormatHint} />
+      </details>
+    </Section>
+  );
+}
+
+function FormatHint({ hint }: { hint: string }) {
+  // No lookbehind: `-(?=\s)` cannot fire inside a hyphenated word, and old Safari never
+  // learned lookbehind.
+  const MARKER = /(\*\*[^*]+\*\*|\*[^*]+\*|##|>|\d+\.|-(?=\s))/g;
+
+  return (
+    <p className="mt-2 text-xs leading-loose text-slate-500">
+      {hint.split(MARKER).map((part, index) =>
+        index % 2 === 1 ? (
+          <code
+            key={index}
+            dir="ltr"
+            className="mx-0.5 inline-block rounded bg-white px-1 font-mono text-[0.7rem] text-slate-700"
+          >
+            {part}
+          </code>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
 function LocationStep({
   state,
   patch,
   cities,
+  cityMismatch,
   errors,
   clear,
-}: StepProps & { cities: City[] | null }) {
+}: StepProps & { cities: City[] | null; cityMismatch: boolean }) {
   const t = useT();
+  const locale = useUiStore((store) => store.locale);
+  const selectedCity = cities?.find((city) => city.key === state.city);
+  const cityName = selectedCity
+    ? locale === 'ar'
+      ? selectedCity.ar
+      : selectedCity.en
+    : state.city;
 
   return (
     <>
@@ -855,12 +1089,31 @@ function LocationStep({
       <Section label={t.unitWizard.searchAddress}>
         <LocationPicker
           value={state.location}
-          onChange={(location: LatLng, address) => {
-            patch(address ? { location, address } : { location });
+          cityLabel={selectedCity ? `${selectedCity.en}, Saudi Arabia` : undefined}
+          onChange={(location: LatLng, address, locality) => {
+            patch({
+              location,
+              ...(address ? { address } : {}),
+              // `undefined` means the lookup did not run; `null` means it ran and found
+              // nothing. Only the second should clear a previous answer.
+              ...(locality !== undefined ? { locality } : {}),
+            });
             clear('location');
           }}
         />
         {errors?.location && <FieldError message={errors.location} />}
+
+        {/*
+          The check that catches a wrong pin however it was produced — a slipped digit, a
+          stale map centre, a short code resolved against the wrong reference.
+        */}
+        {cityMismatch && (
+          <div className="mt-3">
+            <Banner tone="red" icon={AlertTriangle}>
+              {t.unitWizard.cityMismatch(state.locality ?? '', cityName)}
+            </Banner>
+          </div>
+        )}
       </Section>
 
       <Section label={t.unitWizard.fullAddress} required>
@@ -1066,6 +1319,18 @@ function ReviewStep({
           label={t.unitWizard.cancellationPolicy}
           value={t.cancellationPolicies[state.cancellationPolicy].label}
         />
+
+        {/*
+          Full width and formatted, not a truncated `ReviewRow`. The description is the
+          only field on this screen whose *shape* can be wrong while every character of
+          it is right, so the last look before submitting has to be at the shape.
+        */}
+        <div className="col-span-2 min-w-0">
+          <dt className="text-xs text-slate-400">{t.unitWizard.descriptionField}</dt>
+          <dd className="mt-1.5">
+            <UnitDescription text={state.description} emptyLabel={dash} />
+          </dd>
+        </div>
       </ReviewCard>
 
       <ReviewCard title={t.unitWizard.s3Title} onEdit={() => goTo(2)}>
@@ -1076,11 +1341,20 @@ function ReviewStep({
           label={t.unitWizard.coordinates}
           value={
             state.location
-              ? `${state.location.lat.toFixed(4)}, ${state.location.lng.toFixed(4)}`
+              ? `${state.location.lat.toFixed(6)}, ${state.location.lng.toFixed(6)}`
               : dash
           }
           ltr
         />
+
+        {state.location && (
+          <div className="col-span-2">
+            <StaticMapPreview
+              point={state.location}
+              className="w-full max-w-sm overflow-hidden rounded-xl border border-hairline"
+            />
+          </div>
+        )}
       </ReviewCard>
 
       <ReviewCard title={t.unitWizard.s4Title} onEdit={() => goTo(3)}>

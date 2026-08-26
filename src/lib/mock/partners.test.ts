@@ -20,11 +20,21 @@ describe('mockPartners.list', () => {
 });
 
 describe('mockPartners.get', () => {
+  /**
+   * Fetched together, not one after another.
+   *
+   * Awaiting each `get` in sequence cost one mock `delay` per partner — 200-400ms each —
+   * so the run time scaled with the seed and sat right on the 5s default timeout. The
+   * test failed about three runs in four, which is worse than no test: a suite that is
+   * red for a reason nobody trusts stops being read at all. Nothing about what is
+   * asserted changed.
+   */
   it('keeps every partner split on the locked 2% commission', async () => {
     const { items } = await mockPartners.list({ pageSize: 50 });
+    const details = await Promise.all(items.map((partner) => mockPartners.get(partner.id)));
 
-    for (const partner of items) {
-      const detail = await mockPartners.get(partner.id);
+    expect(details).toHaveLength(items.length);
+    for (const detail of details) {
       expect(detail.commissionPaid + detail.partnerEarning).toBe(detail.revenue);
     }
   });

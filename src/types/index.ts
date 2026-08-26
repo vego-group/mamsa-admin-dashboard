@@ -556,7 +556,13 @@ export interface UnitPhoto {
 }
 
 export interface UnitDetail extends Unit {
-  description: string;
+  /**
+   * `null` on a unit whose description was cleared — a `PATCH` sending `null` stores
+   * `null`, and the read side returns what was stored. Was typed as a plain `string`
+   * back when clearing was impossible; every reader already guarded it defensively, and
+   * this makes the guard the type's idea rather than each reader's.
+   */
+  description: string | null;
   /** Display-only URLs. `photos` is the one to send back. */
   images: string[];
   photos: UnitPhoto[];
@@ -650,8 +656,27 @@ export interface UnitDraftExtras {
 /** What `POST /admin/units` receives. */
 export type UnitCreateBody = UnitDraft & UnitDraftExtras;
 
-/** What `PATCH /admin/units/{id}` receives — only the fields that actually changed. */
-export type UnitPatchBody = Partial<UnitCreateBody>;
+/**
+ * The optional fields a `PATCH` may clear by sending `null`.
+ *
+ * These three and no others. The backend documented `null` for exactly this set (reply
+ * 2026-08-26 §5) and said nothing about the rest, and a `null` a validator does not
+ * expect is a `422` on the last step of a five-step form — the same class of guess that
+ * put a fictional `max:500` in this console for a month.
+ */
+export type ClearableUnitField = 'description' | 'address' | 'tourismLicenseNumber';
+
+/**
+ * What `PATCH /admin/units/{id}` receives — only the fields that actually changed.
+ *
+ * An absent key means "unchanged", which is why clearing a field needs a value at all:
+ * `undefined` disappears in `JSON.stringify` and arrives as no key. `null` is the one
+ * spelling that says "empty this". (`""` also works server-side — Laravel's
+ * `ConvertEmptyStringsToNull` runs before validation — but `null` says what it means.)
+ */
+export type UnitPatchBody = Partial<Omit<UnitCreateBody, ClearableUnitField>> & {
+  [K in ClearableUnitField]?: UnitCreateBody[K] | null;
+};
 
 export type UploadKind = 'unit_photo' | 'license_pdf';
 

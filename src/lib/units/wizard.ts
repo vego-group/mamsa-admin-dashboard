@@ -1,13 +1,16 @@
 import {
   AMENITY,
   CANCELLATION_POLICY,
+  UNIT_STATUS,
   UNIT_TYPE,
   type Amenity,
   type CancellationPolicyName,
+  type UnitStatus,
   type UnitType,
 } from '@/lib/constants';
 import { isInsideSaudi } from '@/lib/units/geo';
 import type {
+  ClearableUnitField,
   LatLng,
   UnitCreateBody,
   UnitDetail,
@@ -22,7 +25,35 @@ export const WIZARD_STEP_MINUTES = [4, 6, 3, 4, 1] as const;
 
 export const MAX_PHOTOS = 10;
 export const MAX_UPLOAD_MB = 10;
-export const MAX_DESCRIPTION = 500;
+
+/**
+ * 2000 characters, confirmed against the server rather than guessed at.
+ *
+ * The 500 this console shipped with was never a number the API gave us. It was our own
+ * guess at the partner dashboard's rule, mirrored client-side so an admin would see a
+ * field error instead of a `422` on the last step;
+ * `BACKEND-REQUEST-mamsa-owned-units.md` §8.4 asked for the real list and got no answer,
+ * and the guess then hardened into a fact nobody rechecked. The backend's reply of
+ * 2026-08-26 §2 confirms the shape of that: 500 *was* the server rule, on one shared
+ * `UnitWriter` behind both consoles, and it came from us.
+ *
+ * It is now 2000 on both, counted with `mb_strlen` — so this counts characters and so
+ * does the server, and an Arabic description gets the full 2000 rather than the ~666 a
+ * byte-counting rule would have allowed. A newline is one character on both sides.
+ *
+ * **Live on staging, which is what `.env.local` points at. Production is still on 500
+ * until the backend deploys.** Against production a formatted description will `422`.
+ */
+export const MAX_DESCRIPTION = 2000;
+
+/**
+ * A **submit** gate, not a save rule — the same split the server makes.
+ *
+ * `PATCH` accepts an empty description at any time, so a draft may hold none; only
+ * `POST /units/{id}/submit` refuses one under 10 characters. That is why this is checked
+ * in `stepValidity` (which gates the walk toward submit) and deliberately not in
+ * `firstIncompleteCreateStep` (which gates "Save as draft").
+ */
 export const MIN_DESCRIPTION = 10;
 
 export const AMENITY_KEYS = Object.values(AMENITY);
@@ -75,6 +106,11 @@ export interface UnitWizardState {
   cancellationPolicy: CancellationPolicyName;
   location: LatLng | null;
   address: string;
+  /**
+   * The city-level place the geocoder recognised for the pin. Form state, never sent —
+   * it exists so the pin can be checked against the city the admin declared.
+   */
+  locality: string | null;
   photos: PhotoItem[];
   coverId: string | null;
 }
@@ -99,6 +135,7 @@ export const EMPTY_WIZARD_STATE: UnitWizardState = {
   cancellationPolicy: CANCELLATION_POLICY.MODERATE,
   location: null,
   address: '',
+  locality: null,
   photos: [],
   coverId: null,
 };
@@ -228,8 +265,26 @@ export function toCreateBody(state: UnitWizardState): UnitCreateBody {
     bathrooms: state.bathrooms,
     capacity: state.capacity,
     sizeSqm: state.sizeSqm,
+    // `trim()` and nothing else, ever. The description's formatting *is* its newlines —
+    // the guest site reads `## `, `- ` and `1. ` at the start of a line — so collapsing
+    // whitespace here would silently flatten a structured listing into one grey wall.
+    // Stripping the outer edges is safe: a leading blank line carries no meaning.
     description: state.description.trim() || undefined,
-    amenities: state.amenities.length ? state.amenities : undefined,
+    /*
+      Sorted, because `toPatchBody` compares with `JSON.stringify` and that is positional.
+
+      `toggleAmenity` removes with `filter` and re-adds by appending, so an admin who
+      unchecks Wi-Fi, changes their mind and re-checks it leaves the same set in a new
+      order — `['wifi','ac']` becomes `['ac','wifi']`. The compare called that a change,
+      the patch went out, and an approved unit went back through review for an edit that
+      did not exist. Nothing on screen could reveal it: the chips always render in
+      `AMENITY_KEYS` order, never in state order.
+
+      Sorting here rather than at the comparison keeps the wire body deterministic too.
+      `photoFileIds` is deliberately *not* sorted — its order is the gallery's order and
+      the server stores it as given.
+    */
+    amenities: state.amenities.length ? [...state.amenities].sort() : undefined,
     cancellationPolicy: state.cancellationPolicy,
     checkIn: state.checkIn,
     checkOut: state.checkOut,
@@ -242,6 +297,18 @@ export function toCreateBody(state: UnitWizardState): UnitCreateBody {
     coverFileId: coverPhotoOf(state)?.fileId ?? undefined,
   };
 }
+
+/**
+ * The fields `PATCH` accepts `null` on, as a set for the loop below.
+ *
+ * Derived from the exported type rather than retyped, so adding a field to one is adding
+ * it to both — and neither can quietly grow past what the backend actually documented.
+ */
+const CLEARABLE_FIELDS = new Set<ClearableUnitField>([
+  'description',
+  'address',
+  'tourismLicenseNumber',
+]);
 
 /**
  * Only what actually changed.
@@ -257,9 +324,29 @@ export function toPatchBody(state: UnitWizardState, original: UnitWizardState): 
   const patch: UnitPatchBody = {};
 
   for (const key of Object.keys(next) as Array<keyof UnitCreateBody>) {
-    if (JSON.stringify(next[key]) !== JSON.stringify(before[key])) {
-      Object.assign(patch, { [key]: next[key] });
+    if (JSON.stringify(next[key]) === JSON.stringify(before[key])) continue;
+
+    /*
+      Reaching here with `undefined` means the field had a value and the admin emptied it.
+
+      `undefined` cannot say that. `toCreateBody` maps an emptied optional to `undefined`,
+      `JSON.stringify` drops undefined-valued keys, and the server reads an absent key as
+      "unchanged" — so `{ description: undefined }` went out as `{}` and kept the old
+      text. Worse than the no-op itself: `hasChanges` counted the key, the wizard's guard
+      did not fire, and the request knocked an approved unit back to `pending_review` to
+      change nothing at all.
+
+      `null` is the spelling that clears (backend reply 2026-08-26 §5), but only on the
+      three fields it was documented for. Anything else emptied is still skipped rather
+      than guessed at — see `ClearableUnitField`.
+    */
+    if (next[key] === undefined) {
+      if (!CLEARABLE_FIELDS.has(key as ClearableUnitField)) continue;
+      Object.assign(patch, { [key]: null });
+      continue;
     }
+
+    Object.assign(patch, { [key]: next[key] });
   }
 
   return patch;
@@ -267,6 +354,36 @@ export function toPatchBody(state: UnitWizardState, original: UnitWizardState): 
 
 export function hasChanges(state: UnitWizardState, original: UnitWizardState): boolean {
   return Object.keys(toPatchBody(state, original)).length > 0;
+}
+
+/**
+ * Whether pressing "submit for review" on an existing unit has nothing left to do.
+ *
+ * "Nothing changed" and "nothing to submit" are not the same question, and treating them
+ * as one swallowed the commonest action in the flow: an admin opening a saved draft to
+ * send it for review, changing nothing because there was nothing to change, and being
+ * navigated away with no `PATCH`, no `submit`, no success screen and no error. The unit
+ * stayed a draft and the admin believed it was queued.
+ *
+ * A draft has never been submitted, so submitting it is always real work. A rejected unit
+ * is the same shape — the fix may have been made somewhere this form cannot see. Anything
+ * already in or past review genuinely has nothing to do when nothing changed.
+ *
+ * Lives here rather than inline in the wizard so it can be tested; the silent-failure
+ * version passed a green suite for exactly that reason.
+ */
+export function submitWouldBeNoop(
+  status: UnitStatus | null | undefined,
+  dirty: boolean,
+): boolean {
+  if (dirty) return false;
+
+  // An unknown status attempts the submit rather than swallowing it. The two failures are
+  // not equally bad: a redundant submit is visible and recoverable, a skipped one is the
+  // silent failure this function exists to stop.
+  if (!status) return false;
+
+  return status !== UNIT_STATUS.DRAFT && status !== UNIT_STATUS.REJECTED;
 }
 
 /**

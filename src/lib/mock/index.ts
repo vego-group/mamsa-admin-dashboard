@@ -711,7 +711,16 @@ export const mockUnits = {
 
     // An edit to an approved unit sends it back for review — the same rule the partner
     // dashboard warns about before saving.
-    const next = { ...seed.unitDetail(unit), ...body };
+    //
+    // The spread assumes the write-side key names match the read-side ones. They do for
+    // `description` and `address`; `tourismLicenseNumber` is read back as
+    // `tourismPermitNo`, so without the line below clearing the licence number appeared
+    // to be undone the moment the form rebaselined — a bug that exists only in mock mode
+    // and would have been read as a bug in the clearing itself.
+    const { tourismLicenseNumber, ...rest } = body;
+    const next = { ...seed.unitDetail(unit), ...rest };
+    if (tourismLicenseNumber !== undefined) next.tourismPermitNo = tourismLicenseNumber;
+
     return delay({
       ...next,
       status: unit.status === UNIT_STATUS.APPROVED ? UNIT_STATUS.PENDING_REVIEW : unit.status,

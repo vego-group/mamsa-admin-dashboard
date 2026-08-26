@@ -34,6 +34,7 @@ import {
 } from '@/components/common';
 import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
+import { UnitDescription } from '@/components/units/UnitDescription';
 import {
   CHECKLIST_STEPS,
   type ChecklistStep,
@@ -249,7 +250,18 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
                     {unit.district}, {city}
                   </p>
 
-                  <p className="mt-4 leading-relaxed text-slate-600">{unit.description}</p>
+                  {/*
+                    The reviewer's copy of what the guest will read, formatted the same
+                    way the guest site formats it. Approving a description on the
+                    strength of its words while its structure is broken is the failure
+                    this replaces: the raw string went into a `<p>`, and HTML collapsed
+                    every newline the markers depend on.
+                  */}
+                  <UnitDescription
+                    text={unit.description}
+                    emptyLabel={t.approvalDetail.noDescription}
+                    className="mt-4"
+                  />
 
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <FactTile icon={BedDouble} value={String(unit.bedrooms)} label={t.approvalDetail.bedrooms} />
