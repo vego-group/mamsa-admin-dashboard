@@ -563,7 +563,7 @@ const operationalBookings: Booking[] = bookingSeeds.map((seed, index) => {
   const checkIn = seed.checkInOffset >= 0 ? daysAhead(seed.checkInOffset) : daysAgo(-seed.checkInOffset);
   const checkOut = new Date(new Date(checkIn).getTime() + seed.nights * 86_400_000).toISOString();
   const total = unit.pricePerNight * seed.nights;
-  // Commission is 2% of the net base, never of the gross — the platform cannot take a
+  // Commission is 10% of the net base, never of the gross — the platform cannot take a
   // cut of VAT collected for ZATCA. See the transitional note in README.md.
   const { netBase, vat, commission, partnerShare } = splitPriceForUnit(total, unit.mamsaOwned);
 
@@ -759,7 +759,7 @@ export const cancellations: Cancellation[] = cancellationSeeds.map((seed) => {
 
   /**
    * Host cancellations always refund the guest in full: the partner forfeits their
-   * 98% and Mamsa forfeits its 2%. The platform's own loss is its commission.
+   * 90% and Mamsa forfeits its 10%. The platform's own loss is its commission.
    */
   const impact =
     seed.by === CANCELLED_BY.HOST
@@ -865,7 +865,7 @@ export const platformTotals = {
   bookings: bookingStatusSlices.reduce((sum, slice) => sum + slice.count, 0),
   activePartners: 1_847,
   pendingApprovals: 94,
-  /** Always the 2% split — never a free-standing number. */
+  /** Always the 10% split — never a free-standing number. */
   platformCommission: splitCommission(LIFETIME_GBV).commission,
   monthlyGrowth: 18.4,
   deltas: {

@@ -5,6 +5,12 @@ import type { ReportsSummaryResponse } from '@/types';
 /**
  * Figures lifted verbatim from `MAMSA-BACKEND-REPLY-reports-vat-basis.md` §1 — the
  * backend's own live staging response for partner 5, not an invented example.
+ *
+ * FROZEN 2%-ERA DATA, deliberately. The `commission` below (2,005.20 = 2% of the
+ * 100,260 net) was captured before the 2026-08-27 move to 10%. These tests exercise
+ * field *mapping*, not the rate, so the payload stays exactly as captured. Anyone
+ * refreshing it from a 10%-era response should expect commission ≈ 10,026 and a
+ * partnersShare / commission ratio near 9 — see the note on that assertion below.
  */
 const LIVE: ReportsSummaryResponse = {
   grossRevenue: 123834.2,
@@ -71,6 +77,9 @@ describe('the reports money basis survives both field vocabularies', () => {
     expect(summary.partnersShare).toBe(98254.8);
     // What Mamsa actually earned is the commission, and it is two orders smaller.
     expect(summary.totalCommission).toBe(2005.2);
+    // 48 encodes the 2%-era split this frozen fixture was captured under (98/2 ≈ 49).
+    // A fixture refreshed from a 10%-era payload lands near 9 (90/10) — update this
+    // threshold together with the fixture; that drop is not a regression.
     expect(summary.partnersShare! / summary.totalCommission).toBeGreaterThan(48);
   });
 

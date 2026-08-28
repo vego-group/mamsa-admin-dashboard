@@ -12,7 +12,7 @@ describe('mockReports.summary', () => {
     expect(summary.occupancyAverage).toBe(76);
   });
 
-  it('keeps the reported commission on the locked 2% split', async () => {
+  it('keeps the reported commission on the locked 10% split', async () => {
     const summary = await mockReports.summary('1y');
     expect(summary.totalCommission).toBeCloseTo(summary.totalRevenue * PLATFORM_COMMISSION_RATE, 0);
   });

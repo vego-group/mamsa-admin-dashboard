@@ -26,7 +26,7 @@ export interface CancellationDetailDrawerProps {
 
 /**
  * A host cancellation has one fixed outcome: the guest is refunded in full, the
- * partner forfeits their 98% and Mamsa forfeits its 2% — all from the constants.
+ * partner forfeits their 90% and Mamsa forfeits its 10% — all from the constants.
  * A guest cancellation instead pays out whatever tier of the booking's frozen
  * policy snapshot applied, so that branch reads the snapshot off the booking.
  */
@@ -109,7 +109,7 @@ export function CancellationDetailDrawer({
   );
 }
 
-/** Fixed 100 / 98 / 2 split, computed live from the platform constants. */
+/** Fixed 100 / 90 / 10 split, computed live from the platform constants. */
 function HostImpact({ cancellation }: { cancellation: Cancellation }) {
   const t = useT();
   const split = splitForUnit(cancellation.bookingTotal, cancellation.mamsaOwned);

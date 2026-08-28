@@ -16,13 +16,7 @@ import { useT } from '@/i18n';
 import { bookingsApi } from '@/lib/api';
 import { PARTNER_SHARE_RATE, PLATFORM_COMMISSION_RATE, VAT_RATE } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
-import {
-  formatDate,
-  formatPercent,
-  formatPhone,
-  formatSAR,
-  splitPriceForUnit,
-} from '@/lib/utils/format';
+import { formatDate, formatPercent, formatPhone, formatSAR } from '@/lib/utils/format';
 import type { BookingDetail, ID } from '@/types';
 
 export interface BookingDetailDrawerProps {
@@ -55,12 +49,13 @@ export function BookingDetailDrawer({ bookingId, onOpenChange }: BookingDetailDr
     };
   }, [bookingId, reloadToken]);
 
-  // Both labels carry the live rates, so the screen can never disagree with the split.
+  // Labels carry the CURRENT platform rates; the amounts below are the booking's
+  // frozen values, so a booking charged under an earlier rate shows that rate's money
+  // beside today's label. The API's `commissionRate` field would close that gap, but
+  // it is not yet declared on the Booking type or produced by the mock.
   const commissionRateLabel = formatPercent(PLATFORM_COMMISSION_RATE * 100, 0);
   const partnerRateLabel = formatPercent(PARTNER_SHARE_RATE * 100, 0);
   const vatRateLabel = formatPercent(VAT_RATE * 100, 0);
-  // Zeroes while the drawer is loading; the breakdown only renders once detail exists.
-  const split = splitPriceForUnit(detail?.total ?? 0, detail?.mamsaOwned ?? false);
 
   return (
     <Drawer open={Boolean(bookingId)} onOpenChange={onOpenChange}>
@@ -127,25 +122,23 @@ export function BookingDetailDrawer({ bookingId, onOpenChange }: BookingDetailDr
               <dl className="divide-y divide-hairline">
                 {/* The guest price is VAT-inclusive, so the split is shown in full:
                     gross, the base it decomposes into, the tax, and only then the
-                    commission — which is charged on the base, never on the gross. These
-                    figures come from splitPriceForUnit so they match what actually lands
-                    in the partner's wallet; see the contract note on the Booking type. */}
+                    commission — which is charged on the base, never on the gross. Every
+                    figure renders the API's frozen value exactly as sent (authoritative
+                    since 2026-08-29); recomputing any of them here can disagree with
+                    the stored booking. See the contract note on the Booking type. */}
                 <DrawerStatRow label={t.bookings.grossWithVat} value={formatSAR(detail.total)} />
-                <DrawerStatRow
-                  label={t.bookings.netBase}
-                  value={formatSAR(detail.netBase ?? split.netBase)}
-                />
+                <DrawerStatRow label={t.bookings.netBase} value={formatSAR(detail.netBase)} />
                 <DrawerStatRow
                   label={t.bookings.vatWithRate(vatRateLabel)}
-                  value={formatSAR(detail.vat ?? split.vat)}
+                  value={formatSAR(detail.vat)}
                 />
                 <DrawerStatRow
                   label={t.bookings.commissionWithRate(commissionRateLabel)}
-                  value={formatSAR(split.commission)}
+                  value={formatSAR(detail.commission)}
                 />
                 <DrawerStatRow
                   label={t.bookings.partnerEarningWithRate(partnerRateLabel)}
-                  value={formatSAR(split.partnerShare)}
+                  value={formatSAR(detail.partnerShare)}
                 />
                 <DrawerStatRow
                   label={t.bookings.nightlyRate}

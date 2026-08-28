@@ -29,7 +29,7 @@ describe('mockPartners.get', () => {
    * red for a reason nobody trusts stops being read at all. Nothing about what is
    * asserted changed.
    */
-  it('keeps every partner split on the locked 2% commission', async () => {
+  it('keeps every partner split on the locked 10% commission', async () => {
     const { items } = await mockPartners.list({ pageSize: 50 });
     const details = await Promise.all(items.map((partner) => mockPartners.get(partner.id)));
 
@@ -43,9 +43,10 @@ describe('mockPartners.get', () => {
     const detail = await mockPartners.get('ptr_001');
 
     expect(detail.revenue).toBe(487_000);
-    // 2% of revenue — the locked split, not the 10% the comp sketched.
-    expect(detail.commissionPaid).toBe(9_740);
-    expect(detail.partnerEarning).toBe(477_260);
+    // 10% of revenue — the live rate since 2026-08-27. (10% began as a rejected comp
+    // figure; it is now the owner-decided split.)
+    expect(detail.commissionPaid).toBe(48_700);
+    expect(detail.partnerEarning).toBe(438_300);
     expect(detail.avgPerBooking).toBe(1_561);
     expect(detail.cancellationRate).toBe(1.0);
   });

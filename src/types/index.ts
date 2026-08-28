@@ -845,11 +845,19 @@ export interface Booking {
   /**
    * `total` is VAT-inclusive and decomposes into `netBase` + `vat`.
    *
-   * `commission` and `partnerShare` are **netBase-based** here and after the backend's
-   * VAT refactor: commission is 2% of `netBase`, and the three parts sum to `total`.
-   * On the **live API today** they are still gross-based (2%/98% of `total`, per
-   * BACKEND_SPEC §5.8), which the backend's phase 2 replaces. Mock mode represents the
-   * target state; expect the two to disagree until that ships.
+   * **The API is authoritative for all four money fields (confirmed 2026-08-29), and
+   * they must never be recomputed client-side.** `commission` and `partnerShare` are
+   * frozen onto the booking at creation — the stored `commission_amount` and
+   * `partner_share` columns, charged on the pre-VAT net base at the rate in force that
+   * day (2% before 2026-08-27, 10% after) — so a booking older than a rate change is
+   * *correct* in disagreeing with today's constant. `partnerShare` is deliberately NOT
+   * `total − commission`: the VAT inside `total` belongs to ZATCA. The backend derives
+   * `vat` by subtraction from its own `netBase`, so `netBase + vat === gross` holds
+   * exactly on the wire — re-deriving either here can land a halala off the invoice.
+   *
+   * The response also carries `commissionRate` (the frozen rate); it is not yet
+   * declared here nor produced by the mock, so the UI still labels rates from the
+   * platform constants.
    */
   netBase: number;
   vat: number;

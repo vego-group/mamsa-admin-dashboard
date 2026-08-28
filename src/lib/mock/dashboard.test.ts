@@ -11,16 +11,29 @@ describe('dashboard summary', () => {
     expect(summary.totalBookings.toLocaleString('en-US')).toBe('12,847');
     expect(summary.activePartners.toLocaleString('en-US')).toBe('1,847');
     expect(summary.pendingRequests).toBe(94);
-    expect(formatSAR(summary.platformCommission, { compact: true })).toBe('487K SAR');
+    // 10% of the 24.35M lifetime GBV = 2,435,000, compacted. Read off an actual run at
+    // the new rate, not hand-derived ('487K SAR' was the 2%-era figure).
+    expect(formatSAR(summary.platformCommission, { compact: true })).toBe('2.4M SAR');
     expect(summary.monthlyGrowth).toBe(18.4);
   });
 
-  it('keeps commission on the locked 2% split', async () => {
+  it('keeps commission on the locked 10% split', async () => {
     const summary = await mockDashboard.summary();
     const impliedGbv = summary.avgBookingValue * summary.totalBookings;
 
-    // Rounding on the per-booking average costs a few riyals across 12k bookings.
-    expect(summary.platformCommission).toBeCloseTo(impliedGbv * PLATFORM_COMMISSION_RATE, -3);
+    // Both sides charge the rate on the same gross GBV, so the only gap between them
+    // is rounding, and it is bounded rather than guessed: `avgBookingValue` is rounded
+    // to a whole riyal, so the GBV reconstructed from it is off by at most 0.5 SAR per
+    // booking, and the comparison scales that by the rate (plus round2's half-halala
+    // on the real figure):
+    //   |platformCommission − impliedGbv × rate| ≤ 0.5 × totalBookings × rate + 0.005
+    // The bound grows with the rate — the old fixed ±500 covered 2% four times over
+    // but sat BELOW the 10% worst case (642) and survived only because this seed's
+    // per-booking residual is 0.38, not the full 0.5.
+    const roundingBound = 0.5 * summary.totalBookings * PLATFORM_COMMISSION_RATE + 0.005;
+    expect(
+      Math.abs(summary.platformCommission - impliedGbv * PLATFORM_COMMISSION_RATE),
+    ).toBeLessThanOrEqual(roundingBound);
 
     for (const point of summary.revenueSeries) {
       expect(point.commission).toBeCloseTo(point.revenue * PLATFORM_COMMISSION_RATE, 2);

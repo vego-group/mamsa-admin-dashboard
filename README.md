@@ -108,8 +108,8 @@ equivalent value inline.
 | Currency | SAR only — never AED/USD |
 | Phone | `+966` + 9 digits starting with 5 |
 | Authentication | OTP only, 6 digits — **no passwords, no 2FA anywhere** |
-| Platform commission | **2%** (`PLATFORM_COMMISSION_RATE`) |
-| Partner share | **98%** (`PARTNER_SHARE_RATE`) |
+| Platform commission | **10%** (`PLATFORM_COMMISSION_RATE`) — moved from 2% by owner decision, 2026-08-27 |
+| Partner share | **90%** (`PARTNER_SHARE_RATE`, derived as `1 − commission`) |
 | Dates | Gregorian `DD/MM/YYYY`, Latin digits |
 | Review SLA | 24h warning, 48h breach (`REVIEW_SLA_HOURS`) — continuous hours from submission, not business days |
 | Payments | Moyasar, immediate — no pending-payment approval step |

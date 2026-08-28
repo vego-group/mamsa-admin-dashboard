@@ -4,6 +4,10 @@
  * Every assertion here is a business decision, not an implementation detail. If one
  * of these tests fails, a locked rule has been broken — fix the code, never the test,
  * and never without a product decision.
+ *
+ * 2026-08-27: the platform commission moved 2% → 10% (partner share 98% → 90%) by owner
+ * decision, deployed to the backend that day. The rate assertions below were updated
+ * under that decision — deliberately, not silently.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -22,15 +26,18 @@ import {
 import { splitCommission, splitForUnit, splitPrice, splitPriceForUnit } from '@/lib/utils/format';
 import { bookings, POLICY_PRESETS } from '@/lib/mock/seed';
 
-describe('commission — 2%, never 10%', () => {
-  it('locks the split rates and their sum', () => {
-    expect(PLATFORM_COMMISSION_RATE).toBe(0.02);
-    expect(PARTNER_SHARE_RATE).toBe(0.98);
-    expect(PLATFORM_COMMISSION_RATE + PARTNER_SHARE_RATE).toBe(1);
+describe('commission — 10%, never 2%', () => {
+  it('locks the commission rate and the derived partner share', () => {
+    // No sum check any more: PARTNER_SHARE_RATE is derived as
+    // `1 - PLATFORM_COMMISSION_RATE`, so the pair summing to 1 is structural rather
+    // than a fact worth asserting. The value worth locking is the rate itself — the
+    // one number a product decision controls.
+    expect(PLATFORM_COMMISSION_RATE).toBe(0.10);
+    expect(PARTNER_SHARE_RATE).toBe(0.90);
   });
 
-  it('splits 4,200 SAR into 84 commission and 4,116 partner share', () => {
-    expect(splitCommission(4200)).toEqual({ total: 4200, commission: 84, partnerShare: 4116 });
+  it('splits 4,200 SAR into 420 commission and 3,780 partner share', () => {
+    expect(splitCommission(4200)).toEqual({ total: 4200, commission: 420, partnerShare: 3780 });
   });
 
   it('gives the platform everything and the partner nothing on Mamsa-owned units', () => {
@@ -71,7 +78,7 @@ describe('commission — 2%, never 10%', () => {
         expect(booking.commission).toBe(booking.netBase);
         expect(booking.partnerShare).toBe(0);
       } else {
-        // 2% of netBase, never of the gross — VAT is collected for ZATCA, not earned.
+        // 10% of netBase, never of the gross — VAT is collected for ZATCA, not earned.
         expect(
           Math.abs(booking.commission - booking.netBase * PLATFORM_COMMISSION_RATE),
         ).toBeLessThanOrEqual(0.01);
@@ -83,7 +90,7 @@ describe('commission — 2%, never 10%', () => {
 describe('VAT — 15%, and the guest price already contains it', () => {
   /**
    * The invariant that matters. It holds only because `partnerShare` is derived by
-   * SUBTRACTION; computing it as `netBase * 0.98` lets the halves miss each other by a
+   * SUBTRACTION; computing it as `netBase * 0.90` lets the halves miss each other by a
    * halala at exactly the values a real booking produces.
    */
   const GROSS_VALUES = [
@@ -98,17 +105,20 @@ describe('VAT — 15%, and the guest price already contains it', () => {
   it('splits every gross value back to itself exactly', () => {
     expect(GROSS_VALUES.length).toBeGreaterThanOrEqual(12);
 
-    // The locked rule is the three-way sum; it holds exactly. The two decomposition
-    // checks below are rounded because adding two 2-decimal floats can land a machine
-    // epsilon off (0.58 + 28.4 → 28.979999999999997) — an artifact of binary floats,
-    // not of the split.
+    // The locked rule is the three-way sum, and it holds to the halala — which is
+    // exact, because sub-halala is not money in this system. Every sum is rounded to
+    // 2 decimals before comparing: adding correct 2-decimal parts in binary can land a
+    // machine epsilon off (at 10%, 221.74 + 1995.65 + 332.61 → 2550.0000000000005),
+    // and whether it does depends on where those doubles fall — the raw three-way
+    // compare passed at 2% only by coincidence. A real one-halala error is a 0.01
+    // difference, which survives the rounding and still fails here.
     const sum2 = (...parts: number[]) =>
       Math.round((parts.reduce((a, b) => a + b, 0) + Number.EPSILON) * 100) / 100;
 
     for (const gross of GROSS_VALUES) {
       const { netBase, vat, commission, partnerShare } = splitPrice(gross);
 
-      expect(commission + partnerShare + vat).toBe(gross);
+      expect(sum2(commission, partnerShare, vat)).toBe(gross);
       expect(sum2(commission, partnerShare)).toBe(netBase);
       expect(sum2(netBase, vat)).toBe(gross);
     }
@@ -117,7 +127,7 @@ describe('VAT — 15%, and the guest price already contains it', () => {
   it('charges commission on the net base, never on the gross', () => {
     const { netBase, commission } = splitPrice(1150);
     expect(netBase).toBe(1000);
-    expect(commission).toBe(20);
+    expect(commission).toBe(100);
   });
 
   it('gives a Mamsa-owned unit the whole net base and the partner nothing', () => {
@@ -217,7 +227,9 @@ describe('source guard — forbidden concepts stay out of the UI', () => {
     { label: 'Authenticator', pattern: /Authenticator/ },
     { label: 'Batch Review', pattern: /Batch Review/ },
     { label: 'AED', pattern: /\bAED\b/ },
-    { label: '(10%)', pattern: /\(10%\)/ },
+    // The stale pre-2026-08-27 rate. A literal "(2%)" in UI source means old copy
+    // crept back in — the live labels derive their percentage from the constants.
+    { label: '(2%)', pattern: /\(2%\)/ },
     { label: 'High Priority', pattern: /High Priority/ },
   ];
 

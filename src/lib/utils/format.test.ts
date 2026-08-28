@@ -44,11 +44,11 @@ describe('formatPhone', () => {
 });
 
 describe('splitCommission', () => {
-  it('splits 2% / 98%', () => {
+  it('splits 10% / 90%', () => {
     expect(splitCommission(4200)).toEqual({
       total: 4200,
-      commission: 84,
-      partnerShare: 4116,
+      commission: 420,
+      partnerShare: 3780,
     });
   });
 
@@ -71,11 +71,11 @@ describe('splitForUnit', () => {
     });
   });
 
-  it('falls back to the 2% split for partner units', () => {
+  it('falls back to the 10% split for partner units', () => {
     expect(splitForUnit(1000, false)).toEqual({
       total: 1000,
-      commission: 20,
-      partnerShare: 980,
+      commission: 100,
+      partnerShare: 900,
     });
   });
 });

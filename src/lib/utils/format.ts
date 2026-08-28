@@ -77,7 +77,7 @@ export interface CommissionSplit {
 }
 
 /**
- * Split a booking total into Mamsa's 2% and the partner's 98%.
+ * Split a booking total into Mamsa's 10% and the partner's 90%.
  * The two parts are guaranteed to sum back to the total exactly.
  */
 export function splitCommission(total: number): CommissionSplit {
@@ -111,9 +111,11 @@ export interface PriceSplit {
  * net base, never on the gross — charging it on the gross would quietly take a cut of
  * tax that belongs to ZATCA.
  *
- * `partnerShare` is derived by **subtraction**, never `netBase * 0.98`. Subtraction is
- * what makes `commission + partnerShare + vat === gross` hold exactly under rounding;
- * multiplying twice and hoping the halves meet does not.
+ * `partnerShare` is derived by **subtraction**, never `netBase * 0.90`. Subtraction is
+ * what makes commission + partnerShare + vat sum back to `gross` at 2-decimal (halala)
+ * precision — the raw IEEE sum of the three parts can sit a float epsilon off, but the
+ * money cannot. Multiplying twice and hoping the halves meet can miss by a full
+ * halala, which is a real error, not an artifact.
  */
 export function splitPrice(gross: number): PriceSplit {
   const safeGross = round2(gross);

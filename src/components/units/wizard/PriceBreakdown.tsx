@@ -11,7 +11,7 @@ import { formatSAR, splitPriceForUnit } from '@/lib/utils/format';
  * The partner dashboard shows this card as "your earnings after our cut". Here there
  * is no cut to take — Mamsa is both the platform and the owner — so the headline is the
  * full net base and the commission line is replaced by the reason it is absent. Showing
- * a 2% row that nets back to us would misstate the same number twice.
+ * a 10% row that nets back to us would misstate the same number twice.
  */
 export function PriceBreakdown({ gross, className }: { gross: number; className?: string }) {
   const t = useT();

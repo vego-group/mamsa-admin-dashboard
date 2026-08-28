@@ -18,9 +18,16 @@ export const OTP_LENGTH = 6;
 export const OTP_RESEND_SECONDS = 60;
 export const OTP_MAX_ATTEMPTS = 3;
 
-/** Revenue split: Mamsa keeps 2%, the partner receives 98%. */
-export const PLATFORM_COMMISSION_RATE = 0.02;
-export const PARTNER_SHARE_RATE = 0.98;
+/**
+ * Revenue split: Mamsa keeps 10%, the partner receives 90%.
+ *
+ * Moved from 2% by owner decision, deployed to the backend on 2026-08-27. The partner
+ * share is derived, never declared independently, so the pair cannot drift apart on a
+ * future rate edit — and it is a label value only: partner money is always computed by
+ * subtraction in `src/lib/utils/format.ts`, never by multiplying this.
+ */
+export const PLATFORM_COMMISSION_RATE = 0.10;
+export const PARTNER_SHARE_RATE = 1 - PLATFORM_COMMISSION_RATE;
 
 /**
  * Saudi VAT. The price a guest pays is VAT-inclusive, so the commission split applies
