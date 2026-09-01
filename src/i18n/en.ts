@@ -740,7 +740,8 @@ export const en = {
     s4Title: 'Unit photos',
     s4Sub: 'A listing cannot pass review without photos. The first one becomes the cover.',
     dragPhotos: 'Drag photos here or click to upload',
-    pngJpgMax: 'PNG, JPG · max 10 MB each',
+    pngJpgMax: (mb: number, minLong: number, minShort: number) =>
+      `PNG, JPG · max ${mb} MB · at least ${minLong}×${minShort} px`,
     uploadedCount: (count: number, max: number) =>
       `(${count}/${max} added · at least 1 required)`,
     photoRequired: 'At least one photo is required to continue.',
@@ -751,6 +752,9 @@ export const en = {
     uploading: 'Uploading…',
     uploadFailed: "Couldn't upload the file",
     fileTooLarge: (mb: number) => `The file is larger than ${mb} MB`,
+    /** Worded as the API words its own rejection, so both paths read identically. */
+    photoTooSmall: (width: number, height: number, minLong: number, minShort: number) =>
+      `Image resolution is too low (${width}×${height}) — the minimum is ${minLong}×${minShort}`,
     clickToUpload: 'Click to upload',
     replaceFile: 'Replace file',
 

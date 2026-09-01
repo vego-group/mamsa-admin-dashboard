@@ -8,6 +8,7 @@ import {
   firstIncompleteCreateStep,
   hasChanges,
   hasUnmergeablePhotos,
+  isDefinitelyUndersized,
   stateFromUnit,
   stepValidity,
   stepsWithErrors,
@@ -657,6 +658,29 @@ describe('description formatting constants', () => {
     // it has to clear the same two gates the field does.
     expect(DESCRIPTION_TEMPLATE.trim().length).toBeGreaterThanOrEqual(MIN_DESCRIPTION);
     expect(DESCRIPTION_TEMPLATE.length).toBeLessThanOrEqual(MAX_DESCRIPTION);
+  });
+
+  it('catches the photo the API measurably refuses, in either orientation', () => {
+    // 432×768 is the real rejection this guard was written from — a phone photo that
+    // came back through a messaging app. Rotating it changes nothing: too few pixels is
+    // too few pixels.
+    expect(isDefinitelyUndersized(432, 768)).toBe(true);
+    expect(isDefinitelyUndersized(768, 432)).toBe(true);
+  });
+
+  it('lets a portrait through that only the strictest reading would refuse', () => {
+    // 720×1280 fails a literal `width ≥ 1024`, and passes a long-edge rule. Which one
+    // the API implements is not known, so this stays the server's call — the wasted
+    // round trip is the cheaper of the two mistakes.
+    expect(isDefinitelyUndersized(720, 1280)).toBe(false);
+    expect(isDefinitelyUndersized(3024, 4032)).toBe(false);
+  });
+
+  it('treats the floor itself as acceptable, not as the first rejection', () => {
+    // An off-by-one here rejects the exact photo the hint tells the admin to bring.
+    expect(isDefinitelyUndersized(1024, 576)).toBe(false);
+    expect(isDefinitelyUndersized(1023, 576)).toBe(true);
+    expect(isDefinitelyUndersized(1024, 575)).toBe(true);
   });
 
   it('keeps the cheatsheet naming every marker the parser reads', () => {

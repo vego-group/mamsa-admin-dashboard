@@ -42,11 +42,14 @@ import {
   MAX_PHOTOS,
   MAX_UPLOAD_MB,
   MIN_DESCRIPTION,
+  MIN_PHOTO_LONG_EDGE,
+  MIN_PHOTO_SHORT_EDGE,
   WIZARD_STEP_COUNT,
   WIZARD_STEP_MINUTES,
   anyPhotoUploading,
   firstIncompleteCreateStep,
   hasUnmergeablePhotos,
+  isDefinitelyUndersized,
   coverPhotoOf,
   hasChanges,
   priceOf,
@@ -74,6 +77,21 @@ import { PriceBreakdown } from './PriceBreakdown';
 export interface UnitWizardProps {
   /** Present in edit mode. Absent creates a new Mamsa-owned unit. */
   existing?: UnitDetail;
+}
+
+/**
+ * Pixel dimensions of an already-created object URL, or `null` if it will not decode.
+ *
+ * Never rejects: a file the browser cannot read is not a file this function has any
+ * opinion about. It goes to the server, which is the one that decides.
+ */
+function measure(objectUrl: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve(null);
+    image.src = objectUrl;
+  });
 }
 
 /**
@@ -218,9 +236,30 @@ export function UnitWizard({ existing }: UnitWizardProps) {
       // Uploaded on pick, not at submit: ten photos at the final button is a long wait at
       // the worst moment, and a failure there would cost the whole form. Each file also
       // uploads independently, so one failure does not take the others with it.
-      uploadsApi
-        .upload('unit_photo', file)
-        .then(({ fileId }) => updatePhoto(localId, { fileId, uploading: false }))
+      //
+      // Measured first, because the browser has already decoded the file for the preview
+      // and the API refuses anything under its resolution floor. Sending a photo that is
+      // visibly too small only to be told so a round trip later is a wait bought for
+      // nothing — and the admin is usually holding a better copy of the same photo.
+      measure(previewUrl)
+        .then((size) => {
+          if (size && isDefinitelyUndersized(size.width, size.height)) {
+            updatePhoto(localId, {
+              uploading: false,
+              error: t.unitWizard.photoTooSmall(
+                size.width,
+                size.height,
+                MIN_PHOTO_LONG_EDGE,
+                MIN_PHOTO_SHORT_EDGE,
+              ),
+            });
+            return;
+          }
+
+          return uploadsApi
+            .upload('unit_photo', file)
+            .then(({ fileId }) => updatePhoto(localId, { fileId, uploading: false }));
+        })
         .catch((err: unknown) =>
           updatePhoto(localId, {
             uploading: false,
@@ -1183,7 +1222,9 @@ function PhotosStep({
           <Upload className="h-6 w-6" />
         </span>
         <span className="mt-2 font-bold text-slate-800">{t.unitWizard.dragPhotos}</span>
-        <span className="text-sm text-slate-500">{t.unitWizard.pngJpgMax}</span>
+        <span className="text-sm text-slate-500">
+          {t.unitWizard.pngJpgMax(MAX_UPLOAD_MB, MIN_PHOTO_LONG_EDGE, MIN_PHOTO_SHORT_EDGE)}
+        </span>
         <span className="text-sm text-slate-400">
           {t.unitWizard.uploadedCount(state.photos.length, MAX_PHOTOS)}
         </span>

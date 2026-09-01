@@ -27,6 +27,36 @@ export const MAX_PHOTOS = 10;
 export const MAX_UPLOAD_MB = 10;
 
 /**
+ * The API's own resolution floor, quoted back by its rejection: `دقة الصورة منخفضة
+ * (432×768) — الحد الأدنى 1024×576`.
+ *
+ * What that pair *means* is not settled. `432×768` failed with a height well over 576,
+ * so the width is what it tripped on — consistent with a literal `width ≥ 1024 &&
+ * height ≥ 576`, and equally consistent with a long-edge/short-edge rule. Under the
+ * literal reading an ordinary portrait phone photo at 720×1280 is refused, which is
+ * almost certainly not what anyone intended; see `isDefinitelyUndersized`.
+ */
+export const MIN_PHOTO_LONG_EDGE = 1024;
+export const MIN_PHOTO_SHORT_EDGE = 576;
+
+/**
+ * True only for a file too small under **both** readings of that floor — long edge
+ * under 1024, or short edge under 576.
+ *
+ * Deliberately the lenient half of the ambiguity. The server stays the authority, so
+ * guessing too narrow here costs one wasted round trip and the admin still sees the
+ * real reason; guessing too wide would reject a photo the API would have taken, and
+ * nothing downstream could tell us we had. A pre-check is worth having only while it
+ * cannot be wrong in that direction.
+ */
+export function isDefinitelyUndersized(width: number, height: number): boolean {
+  return (
+    Math.max(width, height) < MIN_PHOTO_LONG_EDGE ||
+    Math.min(width, height) < MIN_PHOTO_SHORT_EDGE
+  );
+}
+
+/**
  * 2000 characters, confirmed against the server rather than guessed at.
  *
  * The 500 this console shipped with was never a number the API gave us. It was our own

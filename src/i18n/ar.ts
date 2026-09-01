@@ -711,7 +711,8 @@ export const ar: Dictionary = {
     s4Title: 'صور الوحدة',
     s4Sub: 'لا يمكن اعتماد أي وحدة بدون صور. الصورة الأولى تصبح الغلاف.',
     dragPhotos: 'اسحب الصور هنا أو اضغط للرفع',
-    pngJpgMax: 'PNG، JPG · بحد أقصى 10 ميجابايت لكل صورة',
+    pngJpgMax: (mb: number, minLong: number, minShort: number) =>
+      `PNG، JPG · بحد أقصى ${mb} ميجابايت · بدقة ${minLong}×${minShort} على الأقل`,
     uploadedCount: (count: number, max: number) => `(${count}/${max} مضافة · صورة واحدة على الأقل)`,
     photoRequired: 'يجب إضافة صورة واحدة على الأقل للمتابعة.',
     photoTip: 'نصيحة: الغرف المصوّرة بضوء النهار الطبيعي تحصل على حجوزات أكثر بوضوح.',
@@ -721,6 +722,8 @@ export const ar: Dictionary = {
     uploading: 'جاري الرفع…',
     uploadFailed: 'تعذّر رفع الملف',
     fileTooLarge: (mb: number) => `حجم الملف أكبر من ${mb} ميجابايت`,
+    photoTooSmall: (width: number, height: number, minLong: number, minShort: number) =>
+      `دقة الصورة منخفضة (${width}×${height}) — الحد الأدنى ${minLong}×${minShort}`,
     clickToUpload: 'اضغط للرفع',
     replaceFile: 'استبدال الملف',
 
