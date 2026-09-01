@@ -57,7 +57,7 @@ import {
   normalizeAdminProfile,
   type IncomingAdminProfile,
 } from '@/lib/auth/permissions';
-import { ApiError, USE_MOCK, request } from './client';
+import { USE_MOCK, request, toApiError } from './client';
 import { endpoints } from './endpoints';
 
 type Ok = { ok: true };
@@ -293,7 +293,11 @@ export const uploadsApi = {
 
     // Raw File, never FormData — a multipart wrapper fails the server's magic-byte check.
     const put = await fetch(uploadUrl, { method: 'PUT', body: file, credentials: 'omit' });
-    if (!put.ok) throw new ApiError('تعذّر رفع الملف.', put.status, 'UPLOAD_FAILED');
+    // The signed URL points at our own API, not a storage bucket, so a rejection here
+    // arrives in the same Arabic envelope as every other route. Reading it is the whole
+    // difference between "couldn't upload the file" and the reason it was refused —
+    // which the admin needs, because only they can act on it.
+    if (!put.ok) throw await toApiError(put, 'تعذّر رفع الملف.', 'UPLOAD_FAILED');
 
     return { fileId, fileName: file.name };
   },
