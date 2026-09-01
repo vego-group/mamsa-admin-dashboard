@@ -1220,8 +1220,14 @@ function PhotosStep({
                 )}
 
                 {photo.error && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-status-red/80 px-2 text-center text-xs text-white">
-                    <AlertTriangle className="h-4 w-4" />
+                  /* Scrolls and carries a `title`: the server's rejection reason is the
+                     only thing that tells the admin how to fix the photo, and a tile this
+                     small would otherwise clip it out of sight. */
+                  <div
+                    title={photo.error}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-1 overflow-y-auto bg-status-red/80 px-2 py-3 text-center text-xs leading-snug text-white"
+                  >
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
                     {photo.error}
                   </div>
                 )}

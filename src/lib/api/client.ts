@@ -122,10 +122,18 @@ function buildUrl(path: string, params?: Record<string, QueryValue>): string {
  * dashboard's nested `{ error: { … } }`. The nested form is still read as a fallback
  * because reading it costs nothing and a wrong shape fails silently as `undefined`
  * rather than throwing, which is the expensive way to find out.
+ *
+ * `fallbackMessage` / `fallbackCode` stand in only when the body carries no envelope at
+ * all — a proxy's HTML 502, say. They exist for the callers whose failure a user reads
+ * directly, where the default English string would otherwise land on the screen.
  */
-async function toApiError(response: Response): Promise<ApiError> {
-  let message = `Request failed with status ${response.status}`;
-  let code = 'UNKNOWN';
+export async function toApiError(
+  response: Response,
+  fallbackMessage?: string,
+  fallbackCode = 'UNKNOWN',
+): Promise<ApiError> {
+  let message = fallbackMessage ?? `Request failed with status ${response.status}`;
+  let code = fallbackCode;
   let fields: Record<string, string> | null = null;
 
   try {
