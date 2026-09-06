@@ -5,6 +5,8 @@ import type {
   BookingStatus,
   CancellationPolicyName,
   CancelledBy,
+  ComplaintRefundStatus,
+  ComplaintStatus,
   DocumentStatus,
   NotificationCategory,
   PartnerStatus,
@@ -67,6 +69,16 @@ export type Permission =
   | 'bookings.view'
   | 'cancellations.view'
   | 'cancellations.manage'
+  /**
+   * Complaints split the decision from the money on purpose: `approve` fixes an amount,
+   * `execute_refund` sends exactly that amount to the gateway, and finance holds only
+   * `view` + `execute_refund`. Two people, two permissions — that separation is the
+   * feature, not a UI detail.
+   */
+  | 'complaints.view'
+  | 'complaints.review'
+  | 'complaints.approve'
+  | 'complaints.execute_refund'
   | 'wallets.view'
   | 'wallets.adjust'
   | 'payouts.view'
@@ -1127,4 +1139,128 @@ export interface NotificationItem {
   at: ISODate;
   read: boolean;
   entity: { type: 'approval' | 'booking' | 'partner' | 'cancellation' | 'report'; id: ID } | null;
+}
+
+/* ------------------------------------------------------------ complaints */
+
+/**
+ * Every money field on the complaints surface is an **integer count of halalas**, exactly
+ * as the API sends it. Dividing by 100 happens at render time only, and no figure is ever
+ * derived from another here — `partnerHalalas` in particular is the server's split at the
+ * rate frozen on the booking, which today's constant may not match.
+ */
+export type Halalas = number;
+
+export interface ComplaintRow {
+  id: number;
+  status: ComplaintStatus;
+  bookingCode: string | null;
+  unitName: string | null;
+  guestName: string | null;
+  partnerName: string | null;
+  hasAttachments: boolean;
+  createdAt: ISODate | null;
+}
+
+export interface ComplaintListParams extends ListParams {
+  status?: ComplaintStatus | 'all';
+}
+
+/** A signed URL, valid for 15 minutes after the detail was fetched. Never cache it. */
+export interface ComplaintAttachment {
+  url: string;
+  mime: string;
+}
+
+/**
+ * One execution attempt. `pending` is the normal reply to an execution — the gateway
+ * accepted the request and settlement lands later, by webhook or the hourly job. Only
+ * `succeeded` is money that moved, and the complaint turns `resolved_refunded` at that
+ * moment, not at execution.
+ */
+export interface ComplaintRefund {
+  id: number;
+  status: ComplaintRefundStatus;
+  amountHalalas: Halalas;
+  /** What the partner wallet bears. Server-computed: VAT and commission are not theirs. */
+  partnerHalalas: Halalas;
+  failureReason: string | null;
+  moyasarRefundId: string | null;
+  createdAt: ISODate | null;
+}
+
+export interface ComplaintDetail {
+  complaint: {
+    id: number;
+    status: ComplaintStatus;
+    description: string;
+    contactedPartner: boolean;
+    /** Admin-only. Never shown to a guest or a partner. */
+    internalNote: string | null;
+    /** The text the guest reads. */
+    guestMessage: string | null;
+    reviewedAt: ISODate | null;
+    approvedRefundHalalas: Halalas | null;
+    approvedAt: ISODate | null;
+    /**
+     * False as soon as a `pending` or `succeeded` refund exists — the money moved or is
+     * moving. The server also answers `409`, so hiding the button is a courtesy, not
+     * the guard.
+     */
+    canAmendApproval: boolean;
+    createdAt: ISODate | null;
+  };
+  attachments: ComplaintAttachment[];
+  booking: {
+    code: string | null;
+    checkIn: ISODate | null;
+    checkOut: ISODate | null;
+    grossHalalas: Halalas;
+    vatHalalas: Halalas;
+    commissionHalalas: Halalas;
+    partnerShareHalalas: Halalas;
+    /** Settled money: the sum of `succeeded` rows only. */
+    alreadyRefundedHalalas: Halalas;
+    /**
+     * Money at the gateway, not settled yet: the sum of `pending` rows. Rendered as its
+     * own line only while it is non-zero, in a neutral tone — it is why the ceiling below
+     * drops while an execution is in flight (contract update of 2026-09-06).
+     */
+    pendingRefundHalalas: Halalas;
+    /** The ceiling of the amount field: `gross − alreadyRefunded − pendingRefund`. */
+    maxRefundableHalalas: Halalas;
+    /** The platform's own unit: the refund runs, but no partner wallet is debited. */
+    mamsaOwned: boolean;
+  };
+  guest: { name: string | null; phone: string | null };
+  partner: { name: string | null; phone: string | null; availableBalanceHalalas: Halalas };
+  unit: { id: number | null; name: string | null };
+  refunds: ComplaintRefund[];
+}
+
+export interface ApproveComplaintInput {
+  amountHalalas: Halalas;
+  guestMessage?: string;
+  internalNote?: string;
+}
+
+export interface RejectComplaintInput {
+  guestMessage: string;
+  internalNote?: string;
+}
+
+export interface RefundComplaintInput {
+  /** Must equal `approvedRefundHalalas` exactly; anything else is `AMOUNT_NOT_APPROVED`. */
+  amountHalalas: Halalas;
+  /** One UUID v4 per attempt, kept for the whole attempt. See `newIdempotencyKey`. */
+  idempotencyKey: string;
+}
+
+export interface RefundComplaintResult {
+  ok: true;
+  refundId: number;
+  /** `pending` is the usual answer and is not a success to celebrate — see `ComplaintRefund`. */
+  status: 'pending' | 'succeeded';
+  /** The key had been seen before: this is the original outcome, not a second refund. */
+  replayed?: true;
 }

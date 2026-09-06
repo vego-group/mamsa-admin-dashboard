@@ -72,6 +72,10 @@ import type {
 import * as seed from './seed';
 import { BASE_NOW, delay, matches, paginate, sortBy } from './utils';
 
+// Complaints live in their own module: the feature is a state machine with an
+// idempotency store, and it reads the seeded bookings rather than extending them.
+export { mockComplaints } from './complaints';
+
 /* ------------------------------------------------------------------ auth */
 
 /**

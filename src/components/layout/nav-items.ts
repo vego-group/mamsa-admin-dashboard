@@ -7,6 +7,7 @@ import {
   CircleX,
   LayoutDashboard,
   LayoutGrid,
+  MessageSquareWarning,
   SquareCheckBig,
   User,
   Users,
@@ -80,6 +81,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: CircleX,
         badge: null,
         permission: 'cancellations.view',
+      },
+      {
+        href: '/complaints',
+        labelKey: 'complaints',
+        icon: MessageSquareWarning,
+        badge: null,
+        permission: 'complaints.view',
       },
       {
         href: '/wallets',

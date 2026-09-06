@@ -55,6 +55,17 @@ const TONE_BY_STATUS: Record<string, Tone> = {
   individual: 'grey',
   company: 'grey',
   mamsa_owned: 'blue',
+  // complaints — prefixed keys, so `approved` here (an amount fixed, nothing moved yet)
+  // never borrows the unit's green. Green is reserved for money that actually moved.
+  complaint_submitted: 'grey',
+  complaint_under_review: 'blue',
+  complaint_approved: 'amber',
+  complaint_resolved_refunded: 'green',
+  complaint_resolved_rejected: 'red',
+  // A refund attempt: `pending` is accepted-not-settled, so it is neutral on purpose.
+  refund_pending: 'grey',
+  refund_succeeded: 'green',
+  refund_failed: 'red',
 };
 
 export interface StatusBadgeProps {

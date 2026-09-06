@@ -14,6 +14,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission> = {
   '/partners': 'partners.view',
   '/bookings': 'bookings.view',
   '/cancellations': 'cancellations.view',
+  '/complaints': 'complaints.view',
   '/wallets': 'wallets.view',
   '/payouts': 'payouts.view',
   '/reports': 'reports.financial',

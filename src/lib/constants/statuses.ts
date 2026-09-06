@@ -62,6 +62,33 @@ export type RefundStatus = (typeof REFUND_STATUS)[keyof typeof REFUND_STATUS];
 export const CANCELLED_BY = { GUEST: 'guest', HOST: 'host' } as const;
 export type CancelledBy = (typeof CANCELLED_BY)[keyof typeof CANCELLED_BY];
 
+/**
+ * A guest complaint's lifecycle. `approved` is **not** terminal and does not mean nothing
+ * is in flight: a successful execution leaves a `pending` refund row and the complaint
+ * stays `approved` until the gateway settles, when it becomes `resolved_refunded`.
+ */
+export const COMPLAINT_STATUS = {
+  SUBMITTED: 'submitted',
+  UNDER_REVIEW: 'under_review',
+  APPROVED: 'approved',
+  RESOLVED_REFUNDED: 'resolved_refunded',
+  RESOLVED_REJECTED: 'resolved_rejected',
+} as const;
+export type ComplaintStatus = (typeof COMPLAINT_STATUS)[keyof typeof COMPLAINT_STATUS];
+
+/**
+ * One execution attempt at the gateway. Distinct from `REFUND_STATUS` (a cancellation's
+ * overall refund outcome): this one **does** know `pending`, because an execution is
+ * accepted first and settled later — by webhook, or by the hourly settlement job.
+ */
+export const COMPLAINT_REFUND_STATUS = {
+  PENDING: 'pending',
+  SUCCEEDED: 'succeeded',
+  FAILED: 'failed',
+} as const;
+export type ComplaintRefundStatus =
+  (typeof COMPLAINT_REFUND_STATUS)[keyof typeof COMPLAINT_REFUND_STATUS];
+
 export const DOCUMENT_STATUS = {
   PENDING_REVIEW: 'pending_review',
   VERIFIED: 'verified',

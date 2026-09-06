@@ -133,6 +133,26 @@ export const endpoints = {
     retryRefund: (id: string) => `/admin/cancellations/${id}/retry-refund`,
   },
   /**
+   * Guest complaints — contract v1.1 of 2026-09-06 plus the same-day update that added
+   * `409 REFUND_IN_FLIGHT` on `refund` and `pendingRefundHalalas` on the detail. Deployed
+   * to staging on 2026-09-06 per the backend; the response shapes have not yet been
+   * checked live from this console (needs a staging session — the OTP is held
+   * privately). Every amount on the wire is an integer count of halalas.
+   */
+  complaints: {
+    list: '/admin/complaints',
+    detail: (id: string) => `/admin/complaints/${id}`,
+    /** PATCH `{}` — `submitted → under_review`. */
+    status: (id: string) => `/admin/complaints/${id}/status`,
+    /** POST — fixes the amount; `under_review → approved`. */
+    approve: (id: string) => `/admin/complaints/${id}/approve`,
+    /** PATCH — changes the approved amount; `409` once a refund is pending or succeeded. */
+    approval: (id: string) => `/admin/complaints/${id}/approval`,
+    /** POST — executes **exactly** the approved amount, under an idempotency key. */
+    refund: (id: string) => `/admin/complaints/${id}/refund`,
+    reject: (id: string) => `/admin/complaints/${id}/reject`,
+  },
+  /**
    * Summary only. `export.csv` and `export.pdf` were declared here and never called;
    * both are 404 on staging and production, confirmed by the backend on 2026-08-16.
    * Export is client-side over the loaded page until a server-side export exists.

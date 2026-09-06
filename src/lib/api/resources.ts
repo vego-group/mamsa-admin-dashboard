@@ -8,17 +8,22 @@ import type {
   ApprovalStats,
   ApprovalStatsRange,
   ApprovalStatsResponse,
+  ApproveComplaintInput,
   Booking,
   BookingDetail,
   BookingListParams,
   BookingStats,
   Cancellation,
   City,
+  ComplaintDetail,
+  ComplaintListParams,
+  ComplaintRow,
   CursorPage,
   CancellationListParams,
   CancellationStats,
   DashboardSummary,
   EligiblePartner,
+  Halalas,
   HighRiskPartner,
   IneligiblePartner,
   ID,
@@ -35,6 +40,9 @@ import type {
   PayoutListParams,
   PayoutPage,
   RecordPayoutInput,
+  RefundComplaintInput,
+  RefundComplaintResult,
+  RejectComplaintInput,
   ReportRange,
   ReportsSummary,
   ReportsSummaryResponse,
@@ -389,6 +397,102 @@ export const cancellationsApi = {
     USE_MOCK
       ? mock.mockCancellations.retryRefund(id)
       : request<Ok>(endpoints.cancellations.retryRefund(id), { method: 'POST' }),
+};
+
+/**
+ * What `POST /admin/complaints/{id}/refund` receives — exactly two keys.
+ *
+ * Exported so a test can pin the wire shape. The amount is the approved figure passed
+ * through untouched (the server compares by strict equality), and the key is the one
+ * minted for this attempt — never regenerated here, because a fresh key is precisely
+ * what would turn a retried request into a second refund.
+ */
+export function refundComplaintBody(
+  input: RefundComplaintInput,
+): { amountHalalas: Halalas; idempotencyKey: string } {
+  return { amountHalalas: input.amountHalalas, idempotencyKey: input.idempotencyKey };
+}
+
+/** Optional texts are sent only when they carry something; blank strings are dropped. */
+export function approveComplaintBody(input: ApproveComplaintInput): Record<string, string | number> {
+  const body: Record<string, string | number> = { amountHalalas: input.amountHalalas };
+  const guestMessage = input.guestMessage?.trim();
+  if (guestMessage) body.guestMessage = guestMessage;
+  const internalNote = input.internalNote?.trim();
+  if (internalNote) body.internalNote = internalNote;
+  return body;
+}
+
+export function rejectComplaintBody(input: RejectComplaintInput): Record<string, string> {
+  const body: Record<string, string> = { guestMessage: input.guestMessage.trim() };
+  const internalNote = input.internalNote?.trim();
+  if (internalNote) body.internalNote = internalNote;
+  return body;
+}
+
+/**
+ * Guest complaints. The decision and the money are two calls under two permissions —
+ * `approve` fixes an amount, `refund` sends exactly that amount — and every action
+ * answers `{ ok: true }` rather than the new state, so callers **re-fetch `get()`** after
+ * each success instead of patching state locally: the status, `canAmendApproval`, the
+ * `refunds` array and sometimes `maxRefundableHalalas` all move at once, and the signed
+ * attachment URLs are renewed by the same fetch.
+ */
+export const complaintsApi = {
+  list: (params?: ComplaintListParams) =>
+    USE_MOCK
+      ? mock.mockComplaints.list(params)
+      : request<Paginated<ComplaintRow>>(endpoints.complaints.list, { params: params as never }),
+
+  get: (id: ID) =>
+    USE_MOCK
+      ? mock.mockComplaints.get(id)
+      : request<ComplaintDetail>(endpoints.complaints.detail(id)),
+
+  /** `submitted → under_review`. Needs `complaints.review`. */
+  review: (id: ID) =>
+    USE_MOCK
+      ? mock.mockComplaints.review(id)
+      : request<Ok>(endpoints.complaints.status(id), { method: 'PATCH', body: {} }),
+
+  /** `under_review → approved`, fixing the amount. Needs `complaints.approve`. */
+  approve: (id: ID, input: ApproveComplaintInput) =>
+    USE_MOCK
+      ? mock.mockComplaints.approve(id, input)
+      : request<Ok>(endpoints.complaints.approve(id), {
+          method: 'POST',
+          body: approveComplaintBody(input),
+        }),
+
+  /** Changes the approved amount. `409` once any refund is pending or succeeded. */
+  amendApproval: (id: ID, amountHalalas: Halalas) =>
+    USE_MOCK
+      ? mock.mockComplaints.amendApproval(id, amountHalalas)
+      : request<Ok>(endpoints.complaints.approval(id), {
+          method: 'PATCH',
+          body: { amountHalalas },
+        }),
+
+  /**
+   * The one call here that moves money. A replay of the same `idempotencyKey` answers
+   * `200` with the original result and `replayed: true` — that is the success it is, not
+   * an error. `status: 'pending'` is the normal reply and means "accepted, not settled".
+   */
+  refund: (id: ID, input: RefundComplaintInput) =>
+    USE_MOCK
+      ? mock.mockComplaints.refund(id, input)
+      : request<RefundComplaintResult>(endpoints.complaints.refund(id), {
+          method: 'POST',
+          body: refundComplaintBody(input),
+        }),
+
+  reject: (id: ID, input: RejectComplaintInput) =>
+    USE_MOCK
+      ? mock.mockComplaints.reject(id, input)
+      : request<Ok>(endpoints.complaints.reject(id), {
+          method: 'POST',
+          body: rejectComplaintBody(input),
+        }),
 };
 
 /**

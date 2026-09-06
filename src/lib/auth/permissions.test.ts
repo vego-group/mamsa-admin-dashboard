@@ -35,6 +35,10 @@ const EVERY_PERMISSION = {
   'bookings.view': true,
   'cancellations.view': true,
   'cancellations.manage': true,
+  'complaints.view': true,
+  'complaints.review': true,
+  'complaints.approve': true,
+  'complaints.execute_refund': true,
   'wallets.view': true,
   'wallets.adjust': true,
   'payouts.view': true,
@@ -53,6 +57,8 @@ const FINANCE_GRANTS: Permission[] = [
   'partners.view',
   'bookings.view',
   'cancellations.view',
+  'complaints.view',
+  'complaints.execute_refund',
   'wallets.view',
   'payouts.view',
   'payouts.execute',
@@ -73,6 +79,9 @@ const FINANCE_DENIALS: Permission[] = [
   'partners.manage',
   'dashboard.view',
   'reports.operational',
+  // Finance executes an approved refund; deciding the amount stays with superadmin.
+  'complaints.review',
+  'complaints.approve',
 ];
 
 function profile(overrides: Partial<AdminProfile> = {}): AdminProfile {
@@ -116,8 +125,12 @@ describe('superadmin holds the whole union', () => {
   });
 });
 
-describe('finance is exactly nine permissions', () => {
-  it('holds all nine of its listed grants', () => {
+/**
+ * 2026-09-06: grew from nine to eleven with the complaints feature — `complaints.view`
+ * and `complaints.execute_refund`, deliberately without `complaints.approve`.
+ */
+describe('finance is exactly eleven permissions', () => {
+  it('holds all eleven of its listed grants', () => {
     expect([...ROLE_PERMISSIONS.finance].sort()).toEqual([...FINANCE_GRANTS].sort());
     for (const permission of FINANCE_GRANTS) {
       expect(hasPermission(finance, permission)).toBe(true);
@@ -136,6 +149,17 @@ describe('finance is exactly nine permissions', () => {
     expect(hasPermission(finance, 'payouts.execute')).toBe(true);
     expect(hasPermission(finance, 'payouts.reverse')).toBe(false);
     expect(hasPermission(finance, 'payouts.manage')).toBe(false);
+  });
+
+  /**
+   * The complaints control: the person who fixes the amount and the person who sends
+   * it are different people. Finance may execute an approved refund and nothing else.
+   */
+  it('executes an approved refund but can never approve, amend or review one', () => {
+    expect(hasPermission(finance, 'complaints.view')).toBe(true);
+    expect(hasPermission(finance, 'complaints.execute_refund')).toBe(true);
+    expect(hasPermission(finance, 'complaints.review')).toBe(false);
+    expect(hasPermission(finance, 'complaints.approve')).toBe(false);
   });
 });
 

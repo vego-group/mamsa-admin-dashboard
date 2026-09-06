@@ -24,6 +24,10 @@ export const ALL_PERMISSIONS = [
   'bookings.view',
   'cancellations.view',
   'cancellations.manage',
+  'complaints.view',
+  'complaints.review',
+  'complaints.approve',
+  'complaints.execute_refund',
   'wallets.view',
   'wallets.adjust',
   'payouts.view',
@@ -38,8 +42,10 @@ export const ALL_PERMISSIONS = [
 
 /**
  * Finance records bank transfers; it must not be able to unwind its own records, so
- * `payouts.reverse` and `payouts.manage` stay with superadmin. That single omission
- * is the whole segregation-of-duties control.
+ * `payouts.reverse` and `payouts.manage` stay with superadmin. The same split governs
+ * complaints: finance **executes** an approved refund but never approves or amends the
+ * amount, so no single finance user can decide what to pay and then pay it. Those two
+ * omissions are the whole segregation-of-duties control.
  */
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
   superadmin: ALL_PERMISSIONS,
@@ -47,6 +53,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     'partners.view',
     'bookings.view',
     'cancellations.view',
+    'complaints.view',
+    'complaints.execute_refund',
     'wallets.view',
     'payouts.view',
     'payouts.execute',
