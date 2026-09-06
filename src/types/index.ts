@@ -854,15 +854,18 @@ export interface Booking {
    * `total − commission`: the VAT inside `total` belongs to ZATCA. The backend derives
    * `vat` by subtraction from its own `netBase`, so `netBase + vat === gross` holds
    * exactly on the wire — re-deriving either here can land a halala off the invoice.
-   *
-   * The response also carries `commissionRate` (the frozen rate); it is not yet
-   * declared here nor produced by the mock, so the UI still labels rates from the
-   * platform constants.
    */
   netBase: number;
   vat: number;
   commission: number;
   partnerShare: number;
+  /**
+   * The rate `commission` was frozen at (a decimal fraction, e.g. `0.10`), so the UI
+   * can label an amount with the rate that actually produced it rather than today's
+   * constant. Mamsa-owned bookings freeze `1` (backend-confirmed 2026-08-29), keeping
+   * `commission === rate × netBase` true on every row.
+   */
+  commissionRate: number;
   nightlyRate: number;
   paymentMethod: string;
   paymentStatus: PaymentStatus;
@@ -906,8 +909,27 @@ export interface Cancellation {
   partnerName: string;
   at: ISODate;
   reason: string;
+  /** VAT-inclusive — never derive a split from this: the VAT inside it belongs to ZATCA. */
   bookingTotal: number;
   refundAmount: number;
+  /**
+   * The booking's frozen split, mirrored onto the cancellation row (contract of
+   * 2026-08-29, committed but not yet deployed — the mock carries it today).
+   * `commission` and `partnerShare` were charged on `netBase` at the rate in force
+   * when the booking was created, so a row frozen under an earlier rate is *correct*
+   * in disagreeing with today's constant. Never recompute them from `bookingTotal`.
+   */
+  netBase: number;
+  commission: number;
+  partnerShare: number;
+  /**
+   * The rate `commission` was frozen at (a decimal fraction, e.g. `0.02`) — same
+   * definition as on `Booking`. Read it for labels; never derive it as
+   * `commission / netBase`: the stored amounts are rounded to two decimals, so the
+   * division returns a near-miss that widens as the booking gets smaller. Mamsa-owned
+   * rows freeze `1` (backend-confirmed), keeping `commission === rate × netBase`.
+   */
+  commissionRate: number;
   /** Negative — what the platform lost on this cancellation. */
   impact: number;
   refundStatus: RefundStatus;

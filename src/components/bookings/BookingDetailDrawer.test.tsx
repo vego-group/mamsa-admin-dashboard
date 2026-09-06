@@ -42,6 +42,7 @@ const FROZEN: BookingDetail = {
   vat: 150,
   commission: 20,
   partnerShare: 980,
+  commissionRate: 0.02,
   nightlyRate: 1150,
   paymentMethod: 'Credit Card',
   paymentStatus: 'paid',
@@ -83,13 +84,17 @@ describe('revenue breakdown reads the API, never recomputes', () => {
     expect(screen.queryByText('900 SAR')).toBeNull();
   });
 
-  it('labels the rows with the current platform rates', async () => {
+  it("labels the rows with the booking's frozen rate, not today's constant", async () => {
     render(<BookingDetailDrawer bookingId="bkg_2pct_era" onOpenChange={vi.fn()} />);
 
-    // The amounts are frozen per booking, but the labels still derive from the
-    // constants — `commissionRate` is not on the Booking type yet, so the drawer
-    // cannot show the rate this booking was actually charged.
-    expect(await screen.findByText(en.bookings.commissionWithRate('10%'))).toBeInTheDocument();
-    expect(screen.getByText(en.bookings.partnerEarningWithRate('90%'))).toBeInTheDocument();
+    // The label must agree with the amount beside it: 20 SAR is 2% of the 1,000 net
+    // base, so the row says (2%) — today's 10% label beside a 2%-era amount would be
+    // a correct number under a wrong caption, which nothing on screen would betray.
+    expect(await screen.findByText(en.bookings.commissionWithRate('2%'))).toBeInTheDocument();
+    expect(screen.getByText(en.bookings.partnerEarningWithRate('98%'))).toBeInTheDocument();
+
+    // Today's platform rates appear nowhere on this booking.
+    expect(screen.queryByText(en.bookings.commissionWithRate('10%'))).toBeNull();
+    expect(screen.queryByText(en.bookings.partnerEarningWithRate('90%'))).toBeNull();
   });
 });

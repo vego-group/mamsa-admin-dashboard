@@ -59,6 +59,26 @@ beforeEach(() => {
 
 afterEach(() => vi.clearAllMocks());
 
+describe('the transfer-date ceiling', () => {
+  /**
+   * `max` must be today in RIYADH. The UTC date is still yesterday for the first
+   * three hours after every Riyadh midnight — exactly when a first-of-month transfer
+   * would be blocked from carrying its true date, and the Riyadh calendar month is
+   * what the once-per-month payout rule is enforced against.
+   */
+  it('caps the date picker at the Riyadh calendar date, not the UTC one', () => {
+    vi.useFakeTimers();
+    // 22:30 UTC on 31 July is already 01:30 on 1 August in Riyadh.
+    vi.setSystemTime(new Date('2026-07-31T22:30:00.000Z'));
+    try {
+      renderDialog();
+      expect(screen.getByLabelText(en.payouts.paidAt)).toHaveAttribute('max', '2026-08-01');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('what the operator may edit', () => {
   /**
    * The amount and the IBAN are server-computed. Rendering them as inputs — even

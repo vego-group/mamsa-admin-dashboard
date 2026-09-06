@@ -22,7 +22,7 @@ import { Card } from '@/components/ui/card';
 import { useT } from '@/i18n';
 import { useCan } from '@/hooks/useCan';
 import { payoutsApi } from '@/lib/api';
-import { PAYOUT_MIN_BALANCE } from '@/lib/constants';
+import { PAYOUT_MIN_BALANCE, PAYOUT_TIMEZONE } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { downloadCsv, toCsv } from '@/lib/utils/csv';
 import { formatDate, formatSAR } from '@/lib/utils/format';
@@ -37,7 +37,7 @@ type Tab = (typeof TABS)[number];
  * route that used to supply it does not exist, and the month is a calendar fact.
  */
 const currentPeriodMonth = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Riyadh',
+  timeZone: PAYOUT_TIMEZONE,
   year: 'numeric',
   month: '2-digit',
 })

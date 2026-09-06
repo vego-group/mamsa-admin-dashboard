@@ -4,6 +4,7 @@ import {
   formatPhone,
   formatSAR,
   nightsBetween,
+  riyadhDateOnly,
   splitCommission,
   splitForUnit,
   waitingTime,
@@ -88,10 +89,50 @@ describe('waitingTime', () => {
     expect(waitingTime('2024-03-19T06:00:00.000Z', now).severity).toBe('warn');
     expect(waitingTime('2024-03-18T06:00:00.000Z', now).severity).toBe('breach');
   });
+
+  /**
+   * The API's actual wire format, pinned at the exact boundary. `submittedAt` arrives
+   * as `2026-07-17T12:32:36+03:00` — full seconds, explicit offset — and a breach is
+   * 48 CONTINUOUS hours later, to the second.
+   *
+   * What this pair guards: an offsetless timestamp parses as browser-LOCAL time (spec
+   * behaviour), which in any non-+03 environment silently understates the elapsed
+   * time and reports breaches hours late. The probes above sit 6-18 hours from the
+   * thresholds and would never notice; these two fail the moment the offset stops
+   * being honoured.
+   */
+  const WIRE_SUBMITTED = '2026-07-17T12:32:36+03:00';
+
+  it('honours the +03:00 wire offset: breach lands exactly 48h after submission', () => {
+    // 2026-07-19T09:32:36Z IS 2026-07-19T12:32:36+03:00 — the 48-hour mark.
+    expect(waitingTime(WIRE_SUBMITTED, new Date('2026-07-19T09:32:36.000Z')).severity).toBe(
+      'breach',
+    );
+  });
+
+  it('is still warn one second before the 48h mark', () => {
+    expect(waitingTime(WIRE_SUBMITTED, new Date('2026-07-19T09:32:35.000Z')).severity).toBe(
+      'warn',
+    );
+  });
 });
 
 describe('nightsBetween', () => {
   it('counts nights', () => {
     expect(nightsBetween('2024-03-15', '2024-03-18')).toBe(3);
+  });
+});
+
+describe('riyadhDateOnly', () => {
+  it('returns the Riyadh calendar date, not the UTC one, across Riyadh midnight', () => {
+    // 22:30 UTC on 31 July is already 01:30 on 1 August in Riyadh.
+    const at = new Date('2026-07-31T22:30:00.000Z');
+    expect(riyadhDateOnly(at)).toBe('2026-08-01');
+    // What `toISOString().slice(0, 10)` — the bug this replaced — said at the same instant.
+    expect(at.toISOString().slice(0, 10)).toBe('2026-07-31');
+  });
+
+  it('matches the UTC date when the instant is unambiguous', () => {
+    expect(riyadhDateOnly(new Date('2026-07-17T12:00:00.000Z'))).toBe('2026-07-17');
   });
 });

@@ -14,7 +14,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
 import { bookingsApi } from '@/lib/api';
-import { PARTNER_SHARE_RATE, PLATFORM_COMMISSION_RATE, VAT_RATE } from '@/lib/constants';
+import { VAT_RATE } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatPercent, formatPhone, formatSAR } from '@/lib/utils/format';
 import type { BookingDetail, ID } from '@/types';
@@ -49,12 +49,10 @@ export function BookingDetailDrawer({ bookingId, onOpenChange }: BookingDetailDr
     };
   }, [bookingId, reloadToken]);
 
-  // Labels carry the CURRENT platform rates; the amounts below are the booking's
-  // frozen values, so a booking charged under an earlier rate shows that rate's money
-  // beside today's label. The API's `commissionRate` field would close that gap, but
-  // it is not yet declared on the Booking type or produced by the mock.
-  const commissionRateLabel = formatPercent(PLATFORM_COMMISSION_RATE * 100, 0);
-  const partnerRateLabel = formatPercent(PARTNER_SHARE_RATE * 100, 0);
+  // The VAT label is the platform rate; the commission and partner labels render from
+  // the booking's frozen `commissionRate` where the rows are built, so a booking
+  // charged under an earlier rate labels itself with that rate — the amount and the
+  // caption beside it can never disagree.
   const vatRateLabel = formatPercent(VAT_RATE * 100, 0);
 
   return (
@@ -133,11 +131,15 @@ export function BookingDetailDrawer({ bookingId, onOpenChange }: BookingDetailDr
                   value={formatSAR(detail.vat)}
                 />
                 <DrawerStatRow
-                  label={t.bookings.commissionWithRate(commissionRateLabel)}
+                  label={t.bookings.commissionWithRate(
+                    formatPercent(detail.commissionRate * 100, 0),
+                  )}
                   value={formatSAR(detail.commission)}
                 />
                 <DrawerStatRow
-                  label={t.bookings.partnerEarningWithRate(partnerRateLabel)}
+                  label={t.bookings.partnerEarningWithRate(
+                    formatPercent((1 - detail.commissionRate) * 100, 0),
+                  )}
                   value={formatSAR(detail.partnerShare)}
                 />
                 <DrawerStatRow

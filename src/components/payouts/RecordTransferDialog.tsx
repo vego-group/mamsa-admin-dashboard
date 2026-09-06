@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useT } from '@/i18n';
 import { ApiError, payoutsApi } from '@/lib/api';
 import { cn } from '@/lib/utils/cn';
-import { formatSAR } from '@/lib/utils/format';
+import { formatSAR, riyadhDateOnly } from '@/lib/utils/format';
 import type { EligiblePartner } from '@/types';
 
 const REFERENCE_MIN = 4;
@@ -74,7 +74,9 @@ export function RecordTransferDialog({
   const trimmed = reference.trim();
   const referenceValid = trimmed.length >= REFERENCE_MIN && trimmed.length <= REFERENCE_MAX;
   const canSubmit = referenceValid && confirmed && !pending;
-  const today = new Date().toISOString().slice(0, 10);
+  // The picker's ceiling is today in RIYADH — the UTC date is yesterday until 03:00
+  // Riyadh time, which would block a first-of-month transfer from its true date.
+  const today = riyadhDateOnly();
 
   function copyTransferData() {
     if (!partner) return;

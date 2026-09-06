@@ -14,9 +14,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
 import { bookingsApi } from '@/lib/api';
-import { CANCELLED_BY, PARTNER_SHARE_RATE, PLATFORM_COMMISSION_RATE } from '@/lib/constants';
+import { CANCELLED_BY } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
-import { formatDate, formatPercent, formatSAR, splitForUnit } from '@/lib/utils/format';
+import { formatDate, formatPercent, formatSAR } from '@/lib/utils/format';
 import type { BookingDetail, Cancellation } from '@/types';
 
 export interface CancellationDetailDrawerProps {
@@ -26,9 +26,10 @@ export interface CancellationDetailDrawerProps {
 
 /**
  * A host cancellation has one fixed outcome: the guest is refunded in full, the
- * partner forfeits their 90% and Mamsa forfeits its 10% — all from the constants.
- * A guest cancellation instead pays out whatever tier of the booking's frozen
- * policy snapshot applied, so that branch reads the snapshot off the booking.
+ * partner forfeits their share and Mamsa forfeits its commission — both read from
+ * the frozen fields on the cancellation row, never recomputed. A guest cancellation
+ * instead pays out whatever tier of the booking's frozen policy snapshot applied,
+ * so that branch reads the snapshot off the booking.
  */
 export function CancellationDetailDrawer({
   cancellation,
@@ -109,13 +110,21 @@ export function CancellationDetailDrawer({
   );
 }
 
-/** Fixed 100 / 90 / 10 split, computed live from the platform constants. */
+/**
+ * The frozen split, read off the cancellation row — never recomputed: `bookingTotal`
+ * is VAT-inclusive, so a split derived from it charges commission on ZATCA's VAT, and
+ * at today's rate rather than the one the booking froze. The net base row is shown so
+ * the two losses visibly sum to it, not to the refund.
+ *
+ * The rate labels read the row's frozen `commissionRate` (and its complement), so the
+ * caption beside each amount is the rate that actually produced it — never derived as
+ * `commission / netBase`, whose rounded operands return a near-miss.
+ */
 function HostImpact({ cancellation }: { cancellation: Cancellation }) {
   const t = useT();
-  const split = splitForUnit(cancellation.bookingTotal, cancellation.mamsaOwned);
   const fullRateLabel = formatPercent(100, 0);
-  const partnerRateLabel = formatPercent(PARTNER_SHARE_RATE * 100, 0);
-  const commissionRateLabel = formatPercent(PLATFORM_COMMISSION_RATE * 100, 0);
+  const partnerRateLabel = formatPercent((1 - cancellation.commissionRate) * 100, 0);
+  const commissionRateLabel = formatPercent(cancellation.commissionRate * 100, 0);
 
   return (
     <>
@@ -124,20 +133,21 @@ function HostImpact({ cancellation }: { cancellation: Cancellation }) {
           label={t.cancellations.guestRefunded(fullRateLabel)}
           value={formatSAR(cancellation.bookingTotal)}
         />
+        <DrawerStatRow label={t.bookings.netBase} value={formatSAR(cancellation.netBase)} />
         {cancellation.mamsaOwned ? (
           <DrawerStatRow
             label={t.cancellations.mamsaLoses(fullRateLabel)}
-            value={formatSAR(split.commission)}
+            value={formatSAR(cancellation.commission)}
           />
         ) : (
           <>
             <DrawerStatRow
               label={t.cancellations.partnerLoses(partnerRateLabel)}
-              value={formatSAR(split.partnerShare)}
+              value={formatSAR(cancellation.partnerShare)}
             />
             <DrawerStatRow
               label={t.cancellations.mamsaLoses(commissionRateLabel)}
-              value={formatSAR(split.commission)}
+              value={formatSAR(cancellation.commission)}
             />
           </>
         )}

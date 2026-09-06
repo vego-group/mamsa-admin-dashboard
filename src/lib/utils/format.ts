@@ -1,6 +1,7 @@
 import {
   CURRENCY,
   PARTNER_SHARE_RATE,
+  PAYOUT_TIMEZONE,
   PHONE_PREFIX,
   PLATFORM_COMMISSION_RATE,
   REVIEW_SLA_HOURS,
@@ -60,6 +61,23 @@ export function formatDateTime(iso: string | Date): string {
   const date = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
   return `${formatDate(date)} · ${formatTime(date)}`;
+}
+
+/**
+ * The calendar date in Riyadh as `YYYY-MM-DD` (the `<input type="date">` value shape).
+ *
+ * Not the UTC date — that is still yesterday for the first three hours after every
+ * Riyadh midnight — and not the browser's local date, which is wrong for any admin
+ * outside UTC+3. Payout periods are Riyadh calendar facts, and the zone lives in
+ * `PAYOUT_TIMEZONE` on purpose so it is written in exactly one place.
+ */
+export function riyadhDateOnly(at: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: PAYOUT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
 }
 
 /** +966 55 123 4567 — render inside a dir="ltr" island. */

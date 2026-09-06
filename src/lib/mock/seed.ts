@@ -11,6 +11,7 @@ import {
   PARTNER_STATUS,
   PARTNER_TYPE,
   PAYMENT_STATUS,
+  PLATFORM_COMMISSION_RATE,
   REFUND_STATUS,
   PAYOUT_STATUS,
   PAYOUT_TIMEZONE,
@@ -587,6 +588,9 @@ const operationalBookings: Booking[] = bookingSeeds.map((seed, index) => {
     vat,
     commission,
     partnerShare,
+    // The frozen rate the split above was charged at. Mamsa-owned units store 1 —
+    // the platform keeps the whole net base — keeping commission === rate × netBase.
+    commissionRate: unit.mamsaOwned ? 1 : PLATFORM_COMMISSION_RATE,
     nightlyRate: unit.pricePerNight,
     paymentMethod: seed.method,
     paymentStatus: seed.paymentStatus,
@@ -684,6 +688,7 @@ const historyBookings: Booking[] = [...HISTORY_SPECS, ...CURRENT_SPECS].flatMap(
       vat,
       commission,
       partnerShare,
+      commissionRate: unit.mamsaOwned ? 1 : PLATFORM_COMMISSION_RATE,
       nightlyRate: unit.pricePerNight,
       paymentMethod: stayIndex % 2 === 0 ? 'Mada' : 'Credit Card',
       paymentStatus: PAYMENT_STATUS.PAID,
@@ -779,6 +784,13 @@ export const cancellations: Cancellation[] = cancellationSeeds.map((seed) => {
     reason: seed.reason,
     bookingTotal: booking.total,
     refundAmount,
+    // The booking's frozen split and rate, copied once at seed build — stored data
+    // from here on, exactly like the same fields on the booking row itself. The rate
+    // rides along too, so Mamsa-owned rows carry the confirmed `1`.
+    netBase: booking.netBase,
+    commission: booking.commission,
+    partnerShare: booking.partnerShare,
+    commissionRate: booking.commissionRate,
     impact,
     refundStatus: seed.refundStatus,
     mamsaOwned: booking.mamsaOwned,
