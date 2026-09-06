@@ -27,8 +27,10 @@ import { useCan } from '@/hooks/useCan';
 import { ApiError, complaintsApi } from '@/lib/api';
 import type { ComplaintAction } from '@/lib/complaints/actions';
 import { formatRiyadhDateTime } from '@/lib/complaints/dates';
+import { formatHalalas } from '@/lib/complaints/money';
 import { refundGate } from '@/lib/complaints/refund-state';
 import { complaintStatusBadge } from '@/lib/complaints/status';
+import { COMPLAINT_STATUS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import type { ComplaintDetail } from '@/types';
 
@@ -346,7 +348,22 @@ function ComplaintDetailContent({ id }: { id: string }) {
         banner={
           <span className="flex items-start gap-2.5">
             <X className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-            <RichText template={t.complaints.rejectBanner} values={{ code }} />
+            <span>
+              <span className="block">
+                <RichText template={t.complaints.rejectBanner} values={{ code }} />
+              </span>
+              {/* From `approved` this withdraws a standing decision with a figure on it.
+                  The figure is named so the admin confirms what they are cancelling. */}
+              {complaint.status === COMPLAINT_STATUS.APPROVED &&
+                complaint.approvedRefundHalalas !== null && (
+                  <span className="mt-1 block">
+                    <RichText
+                      template={t.complaints.rejectApprovedBanner}
+                      values={{ amount: formatHalalas(complaint.approvedRefundHalalas) }}
+                    />
+                  </span>
+                )}
+            </span>
           </span>
         }
         requireReason

@@ -973,6 +973,8 @@ export const en = {
     // reject dialog
     rejectTitle: 'Reject this complaint?',
     rejectBanner: 'Rejecting *{code}* closes it. The guest will read the message below.',
+    // Only from `approved`: a standing decision with a figure on it is being withdrawn.
+    rejectApprovedBanner: 'This cancels an approval of *{amount}* and rejects the complaint.',
     rejectGuestMessage: 'Message to the guest',
     rejectGuestMessagePlaceholder: 'Why the complaint was not accepted…',
     rejectInternalNote: 'Internal note (optional)',

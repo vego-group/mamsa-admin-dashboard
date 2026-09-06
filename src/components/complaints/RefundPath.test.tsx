@@ -37,6 +37,7 @@ function detail(
   overrides: {
     status?: ComplaintDetail['complaint']['status'];
     canAmendApproval?: boolean;
+    canReject?: boolean;
     refunds?: ComplaintRefund[];
     mamsaOwned?: boolean;
     approved?: number | null;
@@ -55,6 +56,9 @@ function detail(
       approvedRefundHalalas: overrides.approved === undefined ? 60000 : overrides.approved,
       approvedAt: '2026-07-26T13:00:00.000Z',
       canAmendApproval: overrides.canAmendApproval ?? true,
+      // The server flips both flags on the same condition, so the fixture does too
+      // unless a test separates them on purpose.
+      canReject: overrides.canReject ?? overrides.canAmendApproval ?? true,
       createdAt: '2026-07-24T09:00:00.000Z',
     },
     attachments: [],
@@ -114,6 +118,7 @@ describe('the execute button — four states', () => {
     expect(button(en.complaints.execute)).toBeNull();
     expect(button(en.complaints.retry)).toBeNull();
     expect(button(en.complaints.amendAmount)).toBeNull();
+    expect(button(en.complaints.reject)).toBeNull();
 
     // The row says "processing", never "refunded".
     expect(screen.getByText(en.status.refund_pending)).toBeInTheDocument();
@@ -242,6 +247,40 @@ describe('who gets which buttons', () => {
       <RefundPath detail={detail({ canAmendApproval: false })} can={superadmin} onAction={vi.fn()} />,
     );
     expect(button(en.complaints.amendAmount)).toBeNull();
+  });
+
+  /**
+   * Since 2026-09-06 an approval can be withdrawn before anything is executed. The
+   * button follows the server's `canReject`, and the decision stays with `approve`.
+   */
+  it('superadmin rejects an approved complaint while the server allows it, and asks the page to confirm', () => {
+    const onAction = vi.fn();
+    const { rerender } = render(
+      <RefundPath detail={detail({ canReject: true })} can={superadmin} onAction={onAction} />,
+    );
+
+    const reject = button(en.complaints.reject);
+    expect(reject).toBeEnabled();
+    fireEvent.click(reject!);
+    expect(onAction).toHaveBeenCalledWith('reject');
+
+    rerender(
+      <RefundPath
+        detail={detail({ canAmendApproval: true, canReject: false })}
+        can={superadmin}
+        onAction={onAction}
+      />,
+    );
+    expect(button(en.complaints.reject)).toBeNull();
+    // Amend follows its own flag — it is still there.
+    expect(button(en.complaints.amendAmount)).toBeEnabled();
+  });
+
+  it('finance never gets reject on an approved complaint, whatever the server allows', () => {
+    render(<RefundPath detail={detail({ canReject: true })} can={finance} onAction={vi.fn()} />);
+
+    expect(button(en.complaints.reject)).toBeNull();
+    expect(button(en.complaints.execute)).toBeEnabled();
   });
 });
 

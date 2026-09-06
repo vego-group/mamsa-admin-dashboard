@@ -19,6 +19,7 @@ import type { AdminProfile, ComplaintDetail } from '@/types';
 const get = vi.fn();
 const refund = vi.fn();
 const review = vi.fn();
+const reject = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const client = await import('@/lib/api/client');
@@ -28,9 +29,9 @@ vi.mock('@/lib/api', async () => {
       get: (...args: unknown[]) => get(...args),
       refund: (...args: unknown[]) => refund(...args),
       review: (...args: unknown[]) => review(...args),
+      reject: (...args: unknown[]) => reject(...args),
       approve: vi.fn(),
       amendApproval: vi.fn(),
-      reject: vi.fn(),
     },
     // The stores import these at module level; nothing in this test calls them.
     authApi: { me: vi.fn(), logout: vi.fn() },
@@ -82,6 +83,7 @@ function detail(overrides: Partial<ComplaintDetail['complaint']> = {}, extra: Pa
       approvedRefundHalalas: 60000,
       approvedAt: '2026-07-26T13:00:00.000Z',
       canAmendApproval: true,
+      canReject: true,
       createdAt: '2026-07-24T09:00:00.000Z',
       ...overrides,
     },
@@ -109,7 +111,7 @@ function detail(overrides: Partial<ComplaintDetail['complaint']> = {}, extra: Pa
 
 /** The same complaint after someone else executed: one attempt at the gateway. */
 const PENDING: ComplaintDetail = {
-  ...detail({ canAmendApproval: false }),
+  ...detail({ canAmendApproval: false, canReject: false }),
   booking: { ...detail().booking, pendingRefundHalalas: 60000, maxRefundableHalalas: 390000 },
   refunds: [
     {
@@ -128,6 +130,7 @@ beforeEach(() => {
   get.mockReset();
   refund.mockReset();
   review.mockReset();
+  reject.mockReset();
   useAuthStore.setState({ admin: SUPERADMIN, status: 'authenticated' });
 });
 
@@ -172,6 +175,69 @@ describe('REFUND_IN_FLIGHT from an execution', () => {
     expect(screen.getByText(en.complaints.pendingSettlement)).toBeInTheDocument();
     expect(screen.getByText(en.status.refund_pending)).toBeInTheDocument();
     expect(screen.getByText(en.complaints.pendingSince('27/07/2026 09:30'))).toBeInTheDocument();
+  });
+});
+
+describe('rejecting from approved', () => {
+  it('names the approval being cancelled, and answers REFUND_IN_FLIGHT by re-fetching', async () => {
+    get.mockResolvedValueOnce(detail());
+    render(<ComplaintDetailPage params={{ id: '1004' }} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: en.complaints.reject }));
+    const dialog = await screen.findByRole('dialog');
+
+    // A standing decision with a figure on it is being withdrawn — the figure is named.
+    expect(within(dialog).getByText('600.00 SAR')).toBeInTheDocument();
+    expect(within(dialog).getByText(/cancels an approval of/)).toBeInTheDocument();
+
+    // The guest message stays mandatory.
+    const [guestMessage] = within(dialog).getAllByRole('textbox');
+    fireEvent.change(guestMessage, { target: { value: 'وصل دليل من الشريك ينفي الشكوى.' } });
+
+    // Meanwhile someone executed. The server refuses the rejection; the re-fetch shows why.
+    get.mockResolvedValue(PENDING);
+    reject.mockRejectedValue(
+      new ApiError('يوجد استرداد قيد التنفيذ على هذه الشكوى بالفعل', 409, 'REFUND_IN_FLIGHT', null, {
+        refundId: '12',
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: en.complaints.rejectConfirm }));
+
+    const blocked = await screen.findByRole('button', { name: en.complaints.executeBlocked });
+    expect(blocked).toBeDisabled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(reject).toHaveBeenCalledWith('1004', {
+      guestMessage: 'وصل دليل من الشريك ينفي الشكوى.',
+      internalNote: undefined,
+    });
+    expect(get.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    // Neutral notice, no error, and — `canReject` now false — no reject button either.
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent('يوجد استرداد قيد التنفيذ على هذه الشكوى بالفعل');
+    expect(notice.className).not.toMatch(/status-red|status-amber/);
+    expect(screen.queryByRole('button', { name: en.complaints.reject })).toBeNull();
+    expect(screen.queryByText(/try again/i)).toBeNull();
+  });
+
+  it('closes the complaint when the server accepts the rejection', async () => {
+    get.mockResolvedValueOnce(detail());
+    reject.mockResolvedValue({ ok: true });
+    render(<ComplaintDetailPage params={{ id: '1004' }} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: en.complaints.reject }));
+    const dialog = await screen.findByRole('dialog');
+    const [guestMessage] = within(dialog).getAllByRole('textbox');
+    fireEvent.change(guestMessage, { target: { value: 'لا أساس للشكوى.' } });
+
+    get.mockResolvedValue(
+      detail({ status: 'resolved_rejected', canAmendApproval: false, canReject: false }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: en.complaints.rejectConfirm }));
+
+    await screen.findByText(en.complaints.readOnly);
+    expect(screen.getByText(en.status.complaint_resolved_rejected)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.complaints.execute })).toBeNull();
   });
 });
 

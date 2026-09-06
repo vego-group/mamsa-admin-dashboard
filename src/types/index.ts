@@ -1208,6 +1208,13 @@ export interface ComplaintDetail {
      * the guard.
      */
     canAmendApproval: boolean;
+    /**
+     * Whether `POST /reject` is open — from `under_review`, and since 2026-09-06 from
+     * `approved` too, so an approval that new evidence overturns can be withdrawn before
+     * anything is executed. False under exactly the same condition as `canAmendApproval`:
+     * a `pending` or `succeeded` refund exists, so the money moved or is moving.
+     */
+    canReject: boolean;
     createdAt: ISODate | null;
   };
   attachments: ComplaintAttachment[];

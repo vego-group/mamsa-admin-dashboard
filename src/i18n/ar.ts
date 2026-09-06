@@ -940,6 +940,8 @@ export const ar: Dictionary = {
     // reject dialog
     rejectTitle: 'رفض هذه الشكوى؟',
     rejectBanner: 'رفض *{code}* يغلقها. سيقرأ الضيف الرسالة أدناه.',
+    // من «معتمدة» فقط: قرار اعتماد قائم بمبلغ محدد يُلغى.
+    rejectApprovedBanner: 'سيتم إلغاء اعتماد بقيمة *{amount}* ورفض الشكوى.',
     rejectGuestMessage: 'رسالة للضيف',
     rejectGuestMessagePlaceholder: 'سبب عدم قبول الشكوى…',
     rejectInternalNote: 'ملاحظة داخلية (اختياري)',

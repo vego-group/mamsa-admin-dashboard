@@ -356,6 +356,22 @@ const refundInFlight = (record: ComplaintRecord): ComplaintRefund | undefined =>
 
 const moneyMoving = (record: ComplaintRecord): boolean => refundInFlight(record) !== undefined;
 
+/**
+ * The backend's guard, mirrored on every action money-in-flight closes: execute, amend
+ * and reject. Not an error the operator can act on — the screen re-fetches and shows the
+ * attempt in flight instead.
+ */
+const inFlightError = (row: ComplaintRefund): ApiError =>
+  new ApiError('يوجد استرداد قيد التنفيذ على هذه الشكوى بالفعل', 409, 'REFUND_IN_FLIGHT', null, {
+    refundId: String(row.id),
+  });
+
+/** Decisions — amend, reject — stay open only until something is executed. */
+const decisionOpen = (record: ComplaintRecord): boolean =>
+  (record.status === COMPLAINT_STATUS.UNDER_REVIEW ||
+    record.status === COMPLAINT_STATUS.APPROVED) &&
+  !moneyMoving(record);
+
 /** A fresh signature on every read, the way a real signed URL rotates. */
 function signedUrl(index: number): string {
   const expires = Math.floor((BASE_NOW.getTime() + 15 * 60_000) / 1000);
@@ -398,6 +414,7 @@ function toDetail(record: ComplaintRecord): ComplaintDetail {
       approvedRefundHalalas: record.approvedRefundHalalas,
       approvedAt: record.approvedAt,
       canAmendApproval: record.status === COMPLAINT_STATUS.APPROVED && !moneyMoving(record),
+      canReject: decisionOpen(record),
       createdAt: record.createdAt,
     },
     attachments: record.attachments.map((index) => ({ url: signedUrl(index), mime: 'image/jpeg' })),
@@ -501,7 +518,8 @@ export const mockComplaints = {
     const record = findRecord(id);
     if (!record) return notFound();
     if (record.status !== COMPLAINT_STATUS.APPROVED) return conflict();
-    if (moneyMoving(record)) return conflict('لا يمكن تعديل المبلغ بعد بدء الاسترداد');
+    const moving = refundInFlight(record);
+    if (moving) return fail(inFlightError(moving));
 
     const invalid = amountError(amountHalalas, maxRefundable(record));
     if (invalid) return fail(invalid);
@@ -521,21 +539,9 @@ export const mockComplaints = {
       return delay({ ...seen.result, replayed: true as const });
     }
 
-    // The backend's guard, mirrored: money already moving on this complaint refuses a
-    // second execution outright, under a new key. Not an error the operator can act on —
-    // the screen re-fetches and shows the attempt in flight instead.
+    // Money already moving refuses a second execution outright, under a new key.
     const inFlight = refundInFlight(record);
-    if (inFlight) {
-      return fail(
-        new ApiError(
-          'يوجد استرداد قيد التنفيذ على هذه الشكوى بالفعل',
-          409,
-          'REFUND_IN_FLIGHT',
-          null,
-          { refundId: String(inFlight.id) },
-        ),
-      );
-    }
+    if (inFlight) return fail(inFlightError(inFlight));
 
     if (record.status !== COMPLAINT_STATUS.APPROVED || record.approvedRefundHalalas === null) {
       return conflict();
@@ -574,7 +580,10 @@ export const mockComplaints = {
     ) {
       return conflict();
     }
-    if (moneyMoving(record)) return conflict('لا يمكن رفض شكوى بدأ استردادها');
+    // From `approved` this withdraws a standing decision — allowed only while nothing has
+    // been executed (contract update of 2026-09-06). Same guard, same answer.
+    const moving = refundInFlight(record);
+    if (moving) return fail(inFlightError(moving));
     if (!input.guestMessage?.trim()) {
       return fail(
         new ApiError('رسالة الضيف مطلوبة', 422, VALIDATION_ERROR, null, {

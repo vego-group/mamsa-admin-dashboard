@@ -195,6 +195,14 @@ function ActionBar({
           </Button>
         )}
 
+        {/* Withdraws a standing approval — open only while nothing has been executed. */}
+        {has('reject') && (
+          <Button variant="destructive" onClick={() => onAction('reject')}>
+            <X className="h-4 w-4" aria-hidden />
+            {t.complaints.reject}
+          </Button>
+        )}
+
         {has('execute') && gate.kind === 'ready' && (
           <Button onClick={() => onAction('execute')}>
             <Play className="h-4 w-4" aria-hidden />

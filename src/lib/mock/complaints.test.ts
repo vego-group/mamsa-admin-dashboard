@@ -214,6 +214,7 @@ describe('executing the approved amount', () => {
 
     const amend = await failureOf(mockComplaints.amendApproval(APPROVED_CLEAN, 50000));
     expect(amend.status).toBe(409);
+    expect(amend.code).toBe('REFUND_IN_FLIGHT');
   });
 
   it('replays the same key with the original result and no second row', async () => {
@@ -291,6 +292,58 @@ describe('executing the approved amount', () => {
       mockComplaints.refund(SUBMITTED, { amountHalalas: 1, idempotencyKey: KEY }),
     );
     expect(error.status).toBe(409);
+  });
+});
+
+describe('rejecting from approved (contract update of 2026-09-06)', () => {
+  it('is open while nothing has been executed, and closes the complaint', async () => {
+    const before = await mockComplaints.get(APPROVED_CLEAN);
+    expect(before.complaint.canReject).toBe(true);
+
+    await mockComplaints.reject(APPROVED_CLEAN, { guestMessage: 'وصل دليل من الشريك ينفي الشكوى.' });
+    const after = await mockComplaints.get(APPROVED_CLEAN);
+
+    expect(after.complaint.status).toBe('resolved_rejected');
+    expect(after.complaint.guestMessage).toBe('وصل دليل من الشريك ينفي الشكوى.');
+    expect(after.complaint.canReject).toBe(false);
+    expect(after.complaint.canAmendApproval).toBe(false);
+  });
+
+  it('is refused with REFUND_IN_FLIGHT once an attempt is pending', async () => {
+    const { complaint, refunds } = await mockComplaints.get(APPROVED_PENDING);
+    expect(complaint.canReject).toBe(false);
+
+    const error = await failureOf(
+      mockComplaints.reject(APPROVED_PENDING, { guestMessage: 'لا أساس للشكوى.' }),
+    );
+    expect(error.status).toBe(409);
+    expect(error.code).toBe('REFUND_IN_FLIGHT');
+    expect(error.fields?.refundId).toBe(String(refunds[0].id));
+    expect((await mockComplaints.get(APPROVED_PENDING)).complaint.status).toBe('approved');
+  });
+
+  it('stays open after a failed attempt — no money moved', async () => {
+    const { complaint } = await mockComplaints.get(APPROVED_FAILED);
+    expect(complaint.canReject).toBe(true);
+    expect(complaint.canAmendApproval).toBe(true);
+  });
+
+  it('flips canReject on exactly the condition that flips canAmendApproval', async () => {
+    const { items } = await mockComplaints.list({ pageSize: 50 });
+
+    for (const row of items) {
+      const { complaint, refunds } = await mockComplaints.get(String(row.id));
+      const moving = refunds.some((r) => r.status === 'pending' || r.status === 'succeeded');
+
+      if (complaint.status === 'approved') {
+        expect(complaint.canReject).toBe(complaint.canAmendApproval);
+        expect(complaint.canReject).toBe(!moving);
+      } else if (complaint.status === 'under_review') {
+        expect(complaint.canReject).toBe(true);
+      } else {
+        expect(complaint.canReject).toBe(false);
+      }
+    }
   });
 });
 

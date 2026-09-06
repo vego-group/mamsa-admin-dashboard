@@ -26,6 +26,7 @@ function detail(
       approvedRefundHalalas: approved,
       approvedAt: '2026-07-26T13:00:00.000Z',
       canAmendApproval: true,
+      canReject: true,
       createdAt: '2026-07-24T09:00:00.000Z',
     },
     attachments: [],
