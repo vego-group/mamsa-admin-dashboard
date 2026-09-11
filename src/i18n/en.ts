@@ -890,7 +890,10 @@ export const en = {
     no: 'No',
     attachmentsNote:
       'Links are signed and expire 15 minutes after loading. Refresh to renew them.',
-    attachmentExpired: 'Link expired',
+    // Not a fault: links expire every 15 minutes, and an open page always outlives them.
+    attachmentExpired: 'Link expired — refresh the page',
+    attachmentUnavailable: 'Attachment unavailable',
+    attachmentFailed: 'Could not load the attachment',
     openAttachment: 'Open',
     attachmentLabel: (index: number) => `Attachment ${index}`,
     guestMessage: 'Message shown to the guest',

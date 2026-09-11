@@ -859,7 +859,10 @@ export const ar: Dictionary = {
     yes: 'نعم',
     no: 'لا',
     attachmentsNote: 'الروابط موقّعة وتنتهي بعد ١٥ دقيقة من التحميل. اضغط تحديث لتجديدها.',
-    attachmentExpired: 'انتهت صلاحية الرابط',
+    // ليس عطلاً: الروابط تنتهي كل ١٥ دقيقة، والصفحة المفتوحة تتجاوزها دائماً.
+    attachmentExpired: 'انتهى الرابط — حدّث الصفحة',
+    attachmentUnavailable: 'المرفق غير متاح',
+    attachmentFailed: 'تعذّر تحميل المرفق',
     openAttachment: 'فتح',
     attachmentLabel: (index: number) => `مرفق ${index}`,
     guestMessage: 'النص الذي يراه الضيف',
