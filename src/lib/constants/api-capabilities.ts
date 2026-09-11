@@ -10,6 +10,8 @@
  * Each flag flips to `true` in the same commit the backend ships the column.
  */
 
+import { IS_PRODUCTION_API } from '@/lib/api/client';
+
 /**
  * `sortBy` values the API accepts, per resource. An unrecognised value is **silently
  * ignored** and the default order is returned — never a 422 — so an unsupported sort
@@ -93,3 +95,33 @@ export const ADMIN_UNIT_CREATE_ACCEPTS_FULL_DRAFT = true;
 
 /** `POST /admin/units/{id}/submit` — moves a draft into the review queue. */
 export const ADMIN_UNIT_SUBMIT_ENABLED = true;
+
+/* ------------------------------------------------------ licence review (FE-6) */
+
+/**
+ * The licence card on the approval screen frames the permit file beside the figures it
+ * is there to verify. **Held out of production on 2026-09-11**, on the backend's word:
+ * permit files are currently served with no authentication and no expiry, and framing
+ * one writes that URL into every reviewer's browser history. The fix is escalated.
+ *
+ * When it lands the URL shape changes and a signature may expire mid-session. Every
+ * permit render already goes through one component, `PermitFile`, so absorbing that is a
+ * change in one place.
+ *
+ * `NEXT_PUBLIC_LICENSE_REVIEW` is the switch: `true` shows the card, `false` hides it,
+ * wherever the build points. Turning it on in production is therefore a config change
+ * someone makes on purpose — never a consequence of editing the base URL. With the
+ * variable unset, the host decides as a backstop: everywhere but production. That is
+ * the direction it should fail in.
+ *
+ * Off, the screen is exactly what production has today: no card, the permit in the
+ * documents tab.
+ */
+export const LICENSE_REVIEW_ENABLED = envSwitch(process.env.NEXT_PUBLIC_LICENSE_REVIEW) ?? !IS_PRODUCTION_API;
+
+/** `'true'` / `'false'` as a boolean; anything else — unset, a typo — is "not decided". */
+function envSwitch(value: string | undefined): boolean | null {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return null;
+}

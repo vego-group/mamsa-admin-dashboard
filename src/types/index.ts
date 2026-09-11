@@ -8,6 +8,7 @@ import type {
   ComplaintRefundStatus,
   ComplaintStatus,
   DocumentStatus,
+  LicenseType,
   NotificationCategory,
   PartnerStatus,
   PartnerType,
@@ -604,6 +605,19 @@ export interface UnitDetail extends Unit {
   permitFileUrl: string | null;
   tourismLicenseFileId: string | null;
   ownerIdNumber: string | null;
+  /**
+   * The licence fields of 2026-09-10, confirmed at exactly this path on 2026-09-11 — a
+   * confirmation that mattered: two backend classes shared a name, the fields had gone
+   * onto the partner one, and the admin presenter sent none of them. `licenseType` is
+   * `null` on every unit that predates them — "nobody has classified this yet", never a
+   * fault. `licensedUnitsCount` is the figure **the partner typed**; the server already
+   * refuses a group larger than it, so the one thing a reviewer adds is checking that
+   * figure against the permit file.
+   */
+  licenseType: LicenseType | null;
+  licensedUnitsCount: number | null;
+  /** Units currently listed under this licence. Always an integer; `1` for a standalone unit. */
+  groupSize: number;
 }
 
 export interface UnitListParams extends ListParams {

@@ -517,6 +517,29 @@ export const ar: Dictionary = {
     tourismPermit: 'رخصة السياحة',
     ownerId: 'هوية المالك',
     permitFile: 'ملف الرخصة',
+    // كتلة التصريح. النظام يرفض آلياً أي مجموعة أكبر من العدد المرخّص؛ ما يضيفه المراجع
+    // هو مطابقة الرقم الذي كتبه الشريك بالرقم المكتوب في الملف — فالاثنان في شاشة واحدة.
+    license: 'التصريح',
+    licenseType: 'نوع التصريح',
+    licenseTypes: {
+      tourist_facility: 'مرفق ضيافة سياحي',
+      private_hospitality: 'مرفق ضيافة خاص',
+    },
+    // ليس فراغاً وليس خطأ: «لم يصنّفها أحد بعد».
+    licenseUnspecified: 'غير محدد',
+    // الشريك اختار نوعاً لا تعرفه هذه اللوحة — حالة مختلفة عن «لم يُحدَّد»، ولا تُعرض بالكود.
+    licenseUnknown: 'نوع غير معروف',
+    licensedUnits: 'الوحدات المرخّصة',
+    groupSize: 'حجم المجموعة',
+    licenseUsage: (used: number, licensed: number) => `${used} من ${licensed} مستخدمة`,
+    licenseMatchHint: 'طابق هذا الرقم مع الرقم المكتوب في ملف التصريح.',
+    licenseNoFile: 'لا يوجد ملف تصريح مرفق',
+    rejectionPresetsLabel: 'أسباب جاهزة',
+    rejectionPresets: [
+      'نوع التصريح لا يسمح بأكثر من وحدة',
+      'عدد الوحدات المُدخل لا يطابق ملف التصريح',
+      'تصريح منتهي الصلاحية',
+    ],
     noAmenities: 'لا توجد مرافق مسجّلة',
     // See the note in en.ts — فراغ صامت لا يميّز بين وصف ممسوح ووصف تعذّر عرضه.
     noDescription: 'هذه الوحدة بلا وصف',

@@ -19,7 +19,8 @@ import {
   Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ConfirmDialog, ErrorState, LtrText, PdfViewer, RichText, StatusBadge } from '@/components/common';
+import { ConfirmDialog, ErrorState, LtrText, RichText, StatusBadge } from '@/components/common';
+import { PermitFile } from '@/components/units/PermitFile';
 import { UnitDescription } from '@/components/units/UnitDescription';
 import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
@@ -222,11 +223,7 @@ function UnitDetailPageContent({ params }: { params: { id: string } }) {
               <DetailRow label={t.approvalDetail.tourismPermit} value={detail.tourismPermitNo} />
               <DetailRow label={t.approvalDetail.ownerId} value={detail.ownerIdNumber} />
             </dl>
-            <PdfViewer
-              url={detail.permitFileUrl}
-              title={t.approvalDetail.permitFile}
-              className="mt-4"
-            />
+            <PermitFile url={detail.permitFileUrl} className="mt-4" />
           </Card>
         </div>
 

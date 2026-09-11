@@ -7,6 +7,7 @@ import {
   type CancellationPolicyName,
   CANCELLED_BY,
   DOCUMENT_STATUS,
+  LICENSE_TYPE,
   NOTIFICATION_CATEGORY,
   PARTNER_STATUS,
   PARTNER_TYPE,
@@ -421,8 +422,18 @@ export function unitDetail(unit: Unit): UnitDetail {
     permitFileUrl: '/mock/permit.pdf',
     tourismLicenseFileId: `file_${unit.code.toLowerCase()}_permit`,
     ownerIdNumber: '1010101010',
+    // All three licence shapes the review screen has to render: a building under a
+    // facility licence with room to spare, a single private unit, and a legacy unit
+    // nobody has classified — the last is the common case on staging, not an edge.
+    ...LICENSE_SHAPES[unit.capacity % LICENSE_SHAPES.length],
   };
 }
+
+const LICENSE_SHAPES: Pick<UnitDetail, 'licenseType' | 'licensedUnitsCount' | 'groupSize'>[] = [
+  { licenseType: LICENSE_TYPE.TOURIST_FACILITY, licensedUnitsCount: 8, groupSize: 5 },
+  { licenseType: LICENSE_TYPE.PRIVATE_HOSPITALITY, licensedUnitsCount: 1, groupSize: 1 },
+  { licenseType: null, licensedUnitsCount: null, groupSize: 1 },
+];
 
 const AMENITY_KEY_POOL: Amenity[] = [
   AMENITY.WIFI,
@@ -1371,5 +1382,8 @@ export function createdUnitDetail(body: UnitCreateBody): UnitDetail {
     permitFileUrl: null,
     tourismLicenseFileId: body.tourismLicenseFileId ?? null,
     ownerIdNumber: null,
+    licenseType: null,
+    licensedUnitsCount: null,
+    groupSize: 1,
   };
 }

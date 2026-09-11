@@ -340,6 +340,9 @@ function savedUnit(overrides: Partial<UnitDetail> = {}): UnitDetail {
     permitFileUrl: 'https://cdn/permit.pdf',
     tourismLicenseFileId: 'file_permit',
     ownerIdNumber: null,
+    licenseType: null,
+    licensedUnitsCount: null,
+    groupSize: 1,
     ...overrides,
   };
 }

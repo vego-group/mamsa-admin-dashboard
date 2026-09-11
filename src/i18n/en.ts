@@ -524,6 +524,33 @@ export const en = {
     tourismPermit: 'Tourism Permit',
     ownerId: 'Owner ID',
     permitFile: 'Permit document',
+    // The licence block. The server already refuses a group larger than the licensed
+    // count; what the reviewer adds is checking the figure the partner typed against
+    // the figure printed on the permit — so both sit on one screen.
+    license: 'Licence',
+    licenseType: 'Licence type',
+    licenseTypes: {
+      tourist_facility: 'Tourist hospitality facility',
+      private_hospitality: 'Private hospitality facility',
+    },
+    // Not a gap and not a fault: "nobody has classified it yet".
+    licenseUnspecified: 'Not specified',
+    // The partner picked a type this console cannot render — distinct from "not
+    // specified", and still never the raw code.
+    licenseUnknown: 'Unknown type',
+    licensedUnits: 'Licensed units',
+    groupSize: 'Group size',
+    licenseUsage: (used: number, licensed: number) => `${used} of ${licensed} in use`,
+    licenseMatchHint: 'Match this figure against the number printed on the permit document.',
+    licenseNoFile: 'No permit document attached',
+    rejectionPresetsLabel: 'Ready-made reasons',
+    // What the partner reads, in the language partners read — the console may be in
+    // English, the notification is not.
+    rejectionPresets: [
+      'نوع التصريح لا يسمح بأكثر من وحدة',
+      'عدد الوحدات المُدخل لا يطابق ملف التصريح',
+      'تصريح منتهي الصلاحية',
+    ],
     noAmenities: 'No amenities listed',
     // Not silence. A cleared description and a description that failed to render look
     // identical when the answer to both is an empty gap.

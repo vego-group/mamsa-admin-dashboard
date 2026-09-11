@@ -44,6 +44,17 @@ export const ACCOUNT_STATUS = {
 } as const;
 export type AccountStatus = (typeof ACCOUNT_STATUS)[keyof typeof ACCOUNT_STATUS];
 
+/**
+ * The tourism licence a unit is listed under. Only `tourist_facility` may cover more
+ * than one unit; `private_hospitality` covers exactly one. `null` on the wire is a unit
+ * nobody has classified yet — not an error, and the unit books normally.
+ */
+export const LICENSE_TYPE = {
+  TOURIST_FACILITY: 'tourist_facility',
+  PRIVATE_HOSPITALITY: 'private_hospitality',
+} as const;
+export type LicenseType = (typeof LICENSE_TYPE)[keyof typeof LICENSE_TYPE];
+
 export const REQUEST_TYPE = {
   NEW: 'new',
   RESUBMISSION: 'resubmission',

@@ -25,7 +25,6 @@ import {
   ConfirmDialog,
   ErrorState,
   LtrText,
-  PdfViewer,
   RichText,
   Segmented,
   StatusBadge,
@@ -34,6 +33,8 @@ import {
 } from '@/components/common';
 import { RequirePermission } from '@/components/auth';
 import { ImageGallery } from '@/components/approvals/ImageGallery';
+import { LicenseCard } from '@/components/approvals/LicenseCard';
+import { PermitFile } from '@/components/units/PermitFile';
 import { UnitDescription } from '@/components/units/UnitDescription';
 import {
   CHECKLIST_STEPS,
@@ -45,7 +46,7 @@ import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useT } from '@/i18n';
 import { ApiError, approvalsApi } from '@/lib/api';
-import { REVIEW_SLA_HOURS } from '@/lib/constants';
+import { LICENSE_REVIEW_ENABLED, REVIEW_SLA_HOURS } from '@/lib/constants';
 import { cn } from '@/lib/utils/cn';
 import { formatDate, formatSAR, waitingTime } from '@/lib/utils/format';
 import type { ApprovalDetail } from '@/types';
@@ -229,6 +230,14 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
             </Card>
           )}
 
+          {/*
+            Outside the tabs, so it is on screen whichever one is open: the licensed
+            count the partner typed and the permit that should confirm it must never be a
+            navigation apart. See LicenseCard for why that is the whole point — and
+            api-capabilities.ts for why production does not get it yet.
+          */}
+          {LICENSE_REVIEW_ENABLED && <LicenseCard unit={unit} />}
+
           <Card className="p-5">
             <Segmented
               items={(['property', 'amenities', 'documents', 'timeline'] as const).map((value) => ({
@@ -308,13 +317,17 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
                   </ul>
                 ))}
 
+              {/*
+                With the licence card on, the permit file lives up there beside the
+                figures it verifies. Without it, this tab is what production has today.
+              */}
               {tab === 'documents' && (
                 <div className="space-y-4">
                   <dl className="divide-y divide-hairline rounded-2xl border border-hairline px-4">
                     <Record label={t.approvalDetail.tourismPermit} value={unit.tourismPermitNo} />
                     <Record label={t.approvalDetail.ownerId} value={unit.ownerIdNumber} />
                   </dl>
-                  <PdfViewer url={unit.permitFileUrl} title={t.approvalDetail.permitFile} />
+                  {!LICENSE_REVIEW_ENABLED && <PermitFile url={unit.permitFileUrl} />}
                 </div>
               )}
 
@@ -476,6 +489,8 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
         requireReason
         reasonMultiline={false}
         reasonLabel={t.approvalDetail.rejectionReason}
+        reasonPresets={t.approvalDetail.rejectionPresets}
+        reasonPresetsLabel={t.approvalDetail.rejectionPresetsLabel}
         withNotes
         notesPlaceholder={t.approvalDetail.rejectionNotes}
         confirmLabel={t.approvalDetail.confirmRejection}

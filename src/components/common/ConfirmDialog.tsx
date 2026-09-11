@@ -46,6 +46,14 @@ export interface ConfirmDialogProps {
   reasonPlaceholder?: string;
   /** A one-line reason reads as a summary; a box invites an essay. Default: box. */
   reasonMultiline?: boolean;
+  /**
+   * Ready-made reasons, offered as chips above the field. Picking one fills the field
+   * and nothing more — the text stays editable, and a free reason still works. Chips
+   * exist so the same sentence is not retyped a dozen times a day, slightly differently
+   * each time.
+   */
+  reasonPresets?: readonly string[];
+  reasonPresetsLabel?: string;
   notesLabel?: string;
   notesPlaceholder?: string;
   withNotes?: boolean;
@@ -68,6 +76,8 @@ export function ConfirmDialog({
   reasonLabel,
   reasonPlaceholder,
   reasonMultiline = true,
+  reasonPresets,
+  reasonPresetsLabel,
   notesLabel,
   notesPlaceholder,
   withNotes = false,
@@ -174,6 +184,29 @@ export function ConfirmDialog({
               <label className="text-sm font-medium text-slate-700">
                 {reasonLabel ?? t.common.reason} <span className="text-status-red">*</span>
               </label>
+              {reasonPresets && reasonPresets.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pb-1" role="group" aria-label={reasonPresetsLabel}>
+                  {reasonPresets.map((preset) => {
+                    const selected = reason === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setReason(preset)}
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                          selected
+                            ? 'border-brand bg-brand-soft text-brand'
+                            : 'border-hairline bg-surface-page text-slate-700 hover:border-brand/40 hover:text-brand',
+                        )}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {reasonMultiline ? (
                 <Textarea
                   value={reason}
