@@ -223,7 +223,11 @@ function UnitDetailPageContent({ params }: { params: { id: string } }) {
               <DetailRow label={t.approvalDetail.tourismPermit} value={detail.tourismPermitNo} />
               <DetailRow label={t.approvalDetail.ownerId} value={detail.ownerIdNumber} />
             </dl>
-            <PermitFile url={detail.permitFileUrl} className="mt-4" />
+            <PermitFile
+              url={detail.permitFileUrl}
+              onRefresh={() => setReloadToken((token) => token + 1)}
+              className="mt-4"
+            />
           </Card>
         </div>
 

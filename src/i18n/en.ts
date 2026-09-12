@@ -543,6 +543,11 @@ export const en = {
     licenseUsage: (used: number, licensed: number) => `${used} of ${licensed} in use`,
     licenseMatchHint: 'Match this figure against the number printed on the permit document.',
     licenseNoFile: 'No permit document attached',
+    // The file's URL is signed and expires. Expiry is not a fault — a refresh mints a new one.
+    permitExpired: 'Permit link expired — refresh the page',
+    permitUnavailable: 'Permit document unavailable',
+    permitFailed: 'Could not load the permit document',
+    refreshPermit: 'Refresh',
     rejectionPresetsLabel: 'Ready-made reasons',
     // What the partner reads, in the language partners read — the console may be in
     // English, the notification is not.

@@ -12,9 +12,10 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 
 /**
  * Whether this build talks to the production API. The deployed console does
- * (`Mamsa-Switch-To-Production.md` §1); staging and the mock do not. The few things that
- * are gated on this are features held back from production for a stated reason — see
- * `api-capabilities.ts` — never anything that changes what a request looks like.
+ * (`Mamsa-Switch-To-Production.md` §1); staging and the mock do not. Nothing is gated on
+ * it at the moment; it is the backstop for the next feature held back from production
+ * for a stated reason (as the licence card was, 2026-09-11 to 2026-09-13) — never
+ * anything that changes what a request looks like.
  */
 export const IS_PRODUCTION_API = !USE_MOCK && /^https:\/\/api\.mamsaa\.com(\/|$)/.test(API_BASE_URL);
 

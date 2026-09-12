@@ -13,6 +13,8 @@ export interface LicenseCardProps {
     UnitDetail,
     'licenseType' | 'licensedUnitsCount' | 'groupSize' | 'tourismPermitNo' | 'permitFileUrl'
   >;
+  /** Re-fetches the approval, which is what mints a fresh signed permit URL. */
+  onRefresh?: () => void;
   className?: string;
 }
 
@@ -35,7 +37,7 @@ export interface LicenseCardProps {
  * differently — "not specified" on a classified unit would send the reviewer to the
  * wrong conclusion — so the unknown case gets its own label, and still never the code.
  */
-export function LicenseCard({ unit, className }: LicenseCardProps) {
+export function LicenseCard({ unit, onRefresh, className }: LicenseCardProps) {
   const t = useT();
   const d = t.approvalDetail;
 
@@ -70,7 +72,7 @@ export function LicenseCard({ unit, className }: LicenseCardProps) {
         />
       </dl>
 
-      <PermitFile url={unit.permitFileUrl} className="mt-4" />
+      <PermitFile url={unit.permitFileUrl} onRefresh={onRefresh} className="mt-4" />
     </Card>
   );
 }

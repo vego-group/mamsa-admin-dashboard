@@ -4,9 +4,21 @@
  * value — and `null` reads as "not specified", in the same tone as every other fact.
  */
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { en } from '@/i18n';
 import { LicenseCard, type LicenseCardProps } from './LicenseCard';
+
+// The permit seam looks at its URL before framing it; here the file answers 200 as a PDF.
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(new Response(null, { status: 200, headers: { 'content-type': 'application/pdf' } })),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function unit(overrides: Partial<LicenseCardProps['unit']> = {}): LicenseCardProps['unit'] {
   return {
@@ -30,10 +42,10 @@ describe('LicenseCard', () => {
     expect(screen.queryByText(/tourist_facility/)).not.toBeInTheDocument();
   });
 
-  it('keeps the permit file on the same screen as the figures', () => {
+  it('keeps the permit file on the same screen as the figures', async () => {
     render(<LicenseCard unit={unit()} />);
 
-    expect(screen.getByTitle(en.approvalDetail.permitFile)).toHaveAttribute('src', '/mock/permit.pdf');
+    expect(await screen.findByTitle(en.approvalDetail.permitFile)).toHaveAttribute('src', '/mock/permit.pdf');
   });
 
   it('renders a null licence type as "not specified", neutrally, with the group size alone', () => {

@@ -8,6 +8,13 @@ import { cn } from '@/lib/utils/cn';
 export interface PdfViewerProps {
   url: string | null;
   title: string;
+  /**
+   * What the file is, when the caller knows better than the URL does. A signed document
+   * URL carries no extension, so the sniff below would frame a photographed permit at
+   * its natural size; a caller that has read the response's `content-type` passes it
+   * here instead.
+   */
+  kind?: 'image' | 'document';
   className?: string;
 }
 
@@ -32,7 +39,7 @@ function isImage(url: string): boolean {
  * Permits and company documents must be readable inside the console — an admin
  * cannot verify a document they never opened.
  */
-export function PdfViewer({ url, title, className }: PdfViewerProps) {
+export function PdfViewer({ url, title, kind, className }: PdfViewerProps) {
   const [zoom, setZoom] = useState(100);
   const [broken, setBroken] = useState(false);
 
@@ -50,7 +57,7 @@ export function PdfViewer({ url, title, className }: PdfViewerProps) {
     );
   }
 
-  const image = isImage(url);
+  const image = kind ? kind === 'image' : isImage(url);
 
   return (
     <div className={cn('overflow-hidden rounded-2xl border border-hairline bg-white', className)}>

@@ -236,7 +236,9 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
             navigation apart. See LicenseCard for why that is the whole point — and
             api-capabilities.ts for why production does not get it yet.
           */}
-          {LICENSE_REVIEW_ENABLED && <LicenseCard unit={unit} />}
+          {LICENSE_REVIEW_ENABLED && (
+            <LicenseCard unit={unit} onRefresh={() => setReloadToken((token) => token + 1)} />
+          )}
 
           <Card className="p-5">
             <Segmented
@@ -327,7 +329,12 @@ function ApprovalDetailPageContent({ params }: { params: { id: string } }) {
                     <Record label={t.approvalDetail.tourismPermit} value={unit.tourismPermitNo} />
                     <Record label={t.approvalDetail.ownerId} value={unit.ownerIdNumber} />
                   </dl>
-                  {!LICENSE_REVIEW_ENABLED && <PermitFile url={unit.permitFileUrl} />}
+                  {!LICENSE_REVIEW_ENABLED && (
+                    <PermitFile
+                      url={unit.permitFileUrl}
+                      onRefresh={() => setReloadToken((token) => token + 1)}
+                    />
+                  )}
                 </div>
               )}
 

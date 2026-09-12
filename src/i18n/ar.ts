@@ -534,6 +534,11 @@ export const ar: Dictionary = {
     licenseUsage: (used: number, licensed: number) => `${used} من ${licensed} مستخدمة`,
     licenseMatchHint: 'طابق هذا الرقم مع الرقم المكتوب في ملف التصريح.',
     licenseNoFile: 'لا يوجد ملف تصريح مرفق',
+    // رابط الملف موقّع وينتهي. الانتهاء ليس عطلاً — التحديث يجلب رابطاً جديداً.
+    permitExpired: 'انتهى رابط ملف التصريح — حدّث الصفحة',
+    permitUnavailable: 'ملف التصريح غير متاح',
+    permitFailed: 'تعذّر تحميل ملف التصريح',
+    refreshPermit: 'تحديث',
     rejectionPresetsLabel: 'أسباب جاهزة',
     rejectionPresets: [
       'نوع التصريح لا يسمح بأكثر من وحدة',

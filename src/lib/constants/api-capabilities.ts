@@ -10,8 +10,6 @@
  * Each flag flips to `true` in the same commit the backend ships the column.
  */
 
-import { IS_PRODUCTION_API } from '@/lib/api/client';
-
 /**
  * `sortBy` values the API accepts, per resource. An unrecognised value is **silently
  * ignored** and the default order is returned — never a 422 — so an unsupported sort
@@ -100,24 +98,19 @@ export const ADMIN_UNIT_SUBMIT_ENABLED = true;
 
 /**
  * The licence card on the approval screen frames the permit file beside the figures it
- * is there to verify. **Held out of production on 2026-09-11**, on the backend's word:
- * permit files are currently served with no authentication and no expiry, and framing
- * one writes that URL into every reviewer's browser history. The fix is escalated.
+ * is there to verify.
  *
- * When it lands the URL shape changes and a signature may expire mid-session. Every
- * permit render already goes through one component, `PermitFile`, so absorbing that is a
- * change in one place.
+ * It was held out of production from 2026-09-11, while permit files were served with no
+ * authentication and no expiry and framing one wrote that URL into every reviewer's
+ * history. **Switched on in the commit of 2026-09-12** for the production window of
+ * 2026-09-13 06:00 Asia/Riyadh, when permit URLs become signed and expiring; `PermitFile`
+ * absorbs the new shape and reads an expired signature as "refresh", not "broken".
  *
- * `NEXT_PUBLIC_LICENSE_REVIEW` is the switch: `true` shows the card, `false` hides it,
- * wherever the build points. Turning it on in production is therefore a config change
- * someone makes on purpose — never a consequence of editing the base URL. With the
- * variable unset, the host decides as a backstop: everywhere but production. That is
- * the direction it should fail in.
- *
- * Off, the screen is exactly what production has today: no card, the permit in the
- * documents tab.
+ * `NEXT_PUBLIC_LICENSE_REVIEW` remains the switch: `false` hides the card wherever the
+ * build points, and is the kill switch if the window slips. Unset means on. Off, the
+ * screen is what production had before: no card, the permit in the documents tab.
  */
-export const LICENSE_REVIEW_ENABLED = envSwitch(process.env.NEXT_PUBLIC_LICENSE_REVIEW) ?? !IS_PRODUCTION_API;
+export const LICENSE_REVIEW_ENABLED = envSwitch(process.env.NEXT_PUBLIC_LICENSE_REVIEW) ?? true;
 
 /** `'true'` / `'false'` as a boolean; anything else — unset, a typo — is "not decided". */
 function envSwitch(value: string | undefined): boolean | null {
